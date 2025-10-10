@@ -775,9 +775,19 @@ class FlowScaffolder:
             f'    # Get the task',
             f'    task = registry.get_task(\'{task_name}\')',
             f'    ',
+        ]
+
+        # Add input validation if the task has inputs
+        if sample_inputs:
+            lines.append(f'    # Verify expected inputs')
+            for key, value in sample_inputs.items():
+                lines.append(f'    assert {repr(key)} is not None, "Missing required input: {key}"')
+            lines.append(f'    ')
+
+        lines.extend([
             f'    # Currently expecting NotImplementedTaskError',
             f'    with pytest.raises(NotImplementedTaskError):',
-        ]
+        ])
 
         if is_async:
             lines.append(f'        {await_prefix}task({inputs_str})')
