@@ -8,6 +8,12 @@ inputs:
   - name: action
     type: string
     required: true
+  - name: title
+    type: string
+    required: false
+  - name: description
+    type: string
+    required: false
 
 steps:
   - task: ValidateUser
@@ -23,6 +29,7 @@ steps:
           user_id: ${inputs.user_id}
           title: ${inputs.title}
           description: ${inputs.description}
+          slug: ${create_todo.todo_id}
 
       - task: SendNotification
         id: notify_create

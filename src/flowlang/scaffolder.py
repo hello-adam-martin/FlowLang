@@ -8,10 +8,13 @@ then implement tasks one by one with automatic progress tracking.
 import yaml
 import os
 import re
+import shutil
 from pathlib import Path
-from typing import Dict, List, Set, Any
+from typing import Dict, List, Set, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+
+from .scaffolder_merge import CodeMerger, TestMerger, extract_implementation_status
 
 
 @dataclass
@@ -26,10 +29,19 @@ class TaskInfo:
 class FlowScaffolder:
     """Generates task stubs, tests, and documentation from flow definitions"""
 
-    def __init__(self, output_dir: str = "."):
+    def __init__(self, output_dir: str = ".", force: bool = False):
         self.output_dir = Path(output_dir)
         self.tasks: Dict[str, TaskInfo] = {}
         self.flow_name = "UnnamedFlow"
+        self.force = force  # If True, skip merge and overwrite everything
+        self.merge_summary = {
+            'tasks_preserved': 0,
+            'tasks_added': 0,
+            'tasks_updated': 0,
+            'tests_preserved': 0,
+            'tests_added': 0,
+            'tests_updated': 0,
+        }
 
     def analyze_flow(self, flow_yaml: str) -> Dict[str, TaskInfo]:
         """
@@ -98,7 +110,7 @@ class FlowScaffolder:
 
     def generate_task_stubs(self, filename: str = "tasks.py") -> str:
         """
-        Generate Python file with task stubs.
+        Generate Python file with task stubs, preserving implemented tasks.
 
         Args:
             filename: Name of the output file
@@ -110,13 +122,37 @@ class FlowScaffolder:
 
         print(f"\n📝 Generating task stubs: {output_path}")
 
-        code = self._generate_stubs_code()
+        # Check if file exists and not forcing overwrite
+        existing_merger = None
+        if output_path.exists() and not self.force:
+            print(f"  ℹ️  Existing file found - using smart merge to preserve implementations")
+
+            # Create backup on first merge
+            backup_path = output_path.parent / f"{filename}.backup"
+            if not backup_path.exists():
+                shutil.copy(output_path, backup_path)
+                print(f"  💾 Created backup: {backup_path}")
+
+            # Parse existing file
+            with open(output_path, 'r') as f:
+                existing_code = f.read()
+            existing_merger = CodeMerger(existing_code)
+
+        # Generate code (with or without merge)
+        code = self._generate_stubs_code_with_merge(existing_merger)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, 'w') as f:
             f.write(code)
 
-        print(f"✓ Generated {len(self.tasks)} task stubs")
+        if existing_merger:
+            print(f"  ✅ Preserved {self.merge_summary['tasks_preserved']} implemented tasks")
+            print(f"  🆕 Added {self.merge_summary['tasks_added']} new task stubs")
+            if self.merge_summary['tasks_updated'] > 0:
+                print(f"  ⚠️  {self.merge_summary['tasks_updated']} signatures updated - review manually")
+        else:
+            print(f"✓ Generated {len(self.tasks)} task stubs")
+
         return str(output_path)
 
     def _generate_stubs_code(self) -> str:
@@ -185,6 +221,158 @@ class FlowScaffolder:
 
         for task_name in sorted(self.tasks.keys()):
             lines.append(f"        '{task_name}': False,  # TODO: Set to True when implemented")
+
+        lines.extend([
+            '    }',
+            '    ',
+            '    implemented = sum(1 for v in tasks.values() if v)',
+            '    total = len(tasks)',
+            '    ',
+            '    return {',
+            "        'total': total,",
+            "        'implemented': implemented,",
+            "        'pending': total - implemented,",
+            "        'progress': f'{implemented}/{total}',",
+            "        'percentage': (implemented / total * 100) if total > 0 else 0,",
+            "        'tasks': tasks",
+            '    }',
+            '',
+            '',
+            'def print_status():',
+            '    """Print implementation status to console"""',
+            '    status = get_implementation_status()',
+            '    print("="*60)',
+            f'    print(f"📊 {self.flow_name} - Task Implementation Status")',
+            '    print("="*60)',
+            '    print(f"Total Tasks: {status[\'total\']}")',
+            '    print(f"Implemented: {status[\'implemented\']} ✅")',
+            '    print(f"Pending: {status[\'pending\']} ⚠️")',
+            '    print(f"Progress: {status[\'progress\']} ({status[\'percentage\']:.1f}%)")',
+            '    print("="*60)',
+            '    ',
+            '    if status[\'pending\'] > 0:',
+            '        print("\\n⚠️  Pending Tasks:")',
+            '        for task, implemented in sorted(status[\'tasks\'].items()):',
+            '            if not implemented:',
+            '                print(f"  [ ] {task}")',
+            '    ',
+            '    if status[\'implemented\'] > 0:',
+            '        print("\\n✅ Implemented Tasks:")',
+            '        for task, implemented in sorted(status[\'tasks\'].items()):',
+            '            if implemented:',
+            '                print(f"  [✓] {task}")',
+            '    ',
+            '    print()',
+            '',
+            '',
+            'if __name__ == \'__main__\':',
+            '    print_status()',
+        ])
+
+        return '\n'.join(lines)
+
+    def _generate_stubs_code_with_merge(self, existing_merger: Optional[CodeMerger]) -> str:
+        """
+        Generate task stubs code with smart merge support.
+
+        Args:
+            existing_merger: CodeMerger with existing file, or None for fresh generation
+
+        Returns:
+            Generated Python code
+        """
+        if not existing_merger:
+            # No existing file, generate normally
+            return self._generate_stubs_code()
+
+        # Extract existing implementation status
+        existing_status = extract_implementation_status(existing_merger.source_code)
+
+        # Generate header
+        lines = [
+            '"""',
+            f'Task implementations for {self.flow_name}',
+            f'Auto-generated by FlowLang Scaffolder on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+            '',
+            'Status: Mix of implemented tasks and stubs',
+            '',
+            'IMPORTANT: This file was generated with smart merge.',
+            'Your implemented tasks have been preserved.',
+            '"""',
+            '',
+            'import asyncio',
+            'from typing import Dict, Any',
+            'from pathlib import Path',
+            'import sys',
+            '',
+            '# Add src to path for imports',
+            'sys.path.insert(0, str(Path(__file__).parent.parent / "src"))',
+            '',
+            'from flowlang import TaskRegistry',
+            'from flowlang.exceptions import NotImplementedTaskError',
+            '',
+            '',
+            'def create_task_registry() -> TaskRegistry:',
+            '    """Create and populate the task registry with all tasks"""',
+            '    registry = TaskRegistry()',
+            '    ',
+            '    # ========================================================================',
+            '    # TASK IMPLEMENTATIONS',
+            f'    # Total: {len(self.tasks)} tasks',
+            '    # ========================================================================',
+            '    ',
+        ]
+
+        # Generate tasks with merge logic
+        for task_name, task_info in sorted(self.tasks.items()):
+            func_name = self._to_snake_case(task_name)
+
+            # Check if task was implemented in existing file
+            if existing_merger.is_function_implemented(func_name):
+                # Task is implemented - preserve it exactly
+                existing_body = existing_merger.get_function_body(func_name)
+                lines.append(existing_body)
+                lines.append('    ')
+                self.merge_summary['tasks_preserved'] += 1
+            else:
+                # Task is not implemented or is new - generate stub
+                if func_name in existing_merger.functions:
+                    # Exists but is a stub - might have signature change
+                    old_sig = existing_merger.get_function_signature(func_name)
+                    new_sig = ', '.join(sorted(task_info.inputs)) if task_info.inputs else '**kwargs'
+                    if old_sig != new_sig:
+                        self.merge_summary['tasks_updated'] += 1
+                else:
+                    # Brand new task
+                    self.merge_summary['tasks_added'] += 1
+
+                lines.extend(self._generate_task_stub(task_name, task_info))
+
+        lines.extend([
+            '',
+            '    return registry',
+            '',
+            '',
+            '# ========================================================================',
+            '# IMPLEMENTATION TRACKER',
+            '# ========================================================================',
+            '',
+            'def get_implementation_status() -> Dict[str, Any]:',
+            '    """',
+            '    Get status of task implementations.',
+            '    ',
+            '    Update this as you implement tasks:',
+            '    Change False to True for each completed task.',
+            '    """',
+            '    tasks = {',
+        ])
+
+        # Generate implementation status, preserving existing True values
+        for task_name in sorted(self.tasks.keys()):
+            is_implemented = existing_status.get(task_name, False)
+            status_str = 'True' if is_implemented else 'False'
+            comment = '# Implemented' if is_implemented else '# TODO: Set to True when implemented'
+            lines.append(f"        '{task_name}': {status_str},  {comment}")
 
         lines.extend([
             '    }',
@@ -718,6 +906,11 @@ For more information, see: https://github.com/hello-adam-martin/FlowLang
         default='./flow_project',
         help='Output directory (default: ./flow_project)'
     )
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Force regeneration, overwriting implemented code (dangerous!)'
+    )
 
     args = parser.parse_args()
 
@@ -734,7 +927,7 @@ For more information, see: https://github.com/hello-adam-martin/FlowLang
 
     # Scaffold
     try:
-        scaffolder = FlowScaffolder()
+        scaffolder = FlowScaffolder(force=args.force)
         scaffolder.scaffold(flow_yaml, args.output)
         return 0
     except Exception as e:
