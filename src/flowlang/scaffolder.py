@@ -765,7 +765,11 @@ class FlowScaffolder:
             else:
                 sample_inputs[inp] = 'test_value'
 
-        inputs_str = ', '.join(f'{k}={repr(v)}' for k, v in sample_inputs.items())
+        # Generate two versions of inputs_str:
+        # 1. For initial variable definitions (with literal values)
+        # 2. For task calls (using the variables)
+        inputs_str_literals = ', '.join(f'{k}={repr(v)}' for k, v in sample_inputs.items())
+        inputs_str_vars = ', '.join(f'{k}={k}' for k in sample_inputs.keys())
 
         lines = []
         for decorator in decorators:
@@ -802,14 +806,14 @@ class FlowScaffolder:
         ])
 
         if is_async:
-            lines.append(f'        {await_prefix}task({inputs_str})')
+            lines.append(f'        {await_prefix}task({inputs_str_vars})')
         else:
-            lines.append(f'        task({inputs_str})')
+            lines.append(f'        task({inputs_str_vars})')
 
         lines.extend([
             f'    ',
             f'    # TODO: After implementing, replace above with actual assertions:',
-            f'    # result = {await_prefix}task({inputs_str})',
+            f'    # result = {await_prefix}task({inputs_str_vars})',
             f'    # assert isinstance(result, dict)',
             f'    # assert "expected_key" in result',
             f'    # assert result["expected_key"] == expected_value',

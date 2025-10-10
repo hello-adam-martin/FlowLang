@@ -1,5 +1,5 @@
 flow: TodoManager
-description: A simple todo list management flow
+description: Manage user todo items
 
 inputs:
   - name: user_id
@@ -8,11 +8,8 @@ inputs:
   - name: action
     type: string
     required: true
-  - name: title
-    type: string
-    required: false
-  - name: description
-    type: string
+  - name: todo_data
+    type: object
     required: false
 
 steps:
@@ -20,37 +17,44 @@ steps:
     id: validate
     inputs:
       user_id: ${inputs.user_id}
+    outputs:
+      - is_valid
 
-  - if: ${inputs.action} == create
-    then:
-      - task: CreateTodo
-        id: create_todo
-        inputs:
-          user_id: ${inputs.user_id}
-          title: ${inputs.title}
-          description: ${inputs.description}
-          slug: ${create_todo.todo_id}
+  - task: CreateTodo
+    id: create
+    if: ${validate.is_valid} and ${inputs.action} == 'create'
+    inputs:
+      user_id: ${inputs.user_id}
+      title: ${inputs.todo_data.title}
+      description: ${inputs.todo_data.description}
+      slug: ${inputs.todo_data.slug}
+    outputs:
+      - todo_id
 
-      - task: SendNotification
-        id: notify_create
-        inputs:
-          user_id: ${inputs.user_id}
-          message: "Todo created successfully"
+  - task: GetTodos
+    id: get
+    if: ${validate.is_valid} and ${inputs.action} == 'list'
+    inputs:
+      user_id: ${inputs.user_id}
+    outputs:
+      - todos
 
-    else:
-      - if: ${inputs.action} == list
-        then:
-          - task: GetTodos
-            id: list_todos
-            inputs:
-              user_id: ${inputs.user_id}
+  - task: SendNotification
+    id: notify
+    if: ${create.todo_id}
+    inputs:
+      user_id: ${inputs.user_id}
+      message: ${create.todo_id}
 
-        else:
-          - task: LogInvalidAction
-            id: log_error
-            inputs:
-              action: ${inputs.action}
+  - task: LogInvalidAction
+    id: log_invalid
+    if: not ${validate.is_valid}
+    inputs:
+      user_id: ${inputs.user_id}
+      action: ${inputs.action}
 
 outputs:
+  - name: success
+    value: ${validate.is_valid}
   - name: result
-    value: ${create_todo.todo_id}
+    value: ${create.todo_id or get.todos}
