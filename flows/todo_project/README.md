@@ -11,11 +11,15 @@ This project contains a flow definition and scaffolded task implementations. All
 ```
 .
 ├── flow.yaml           # Flow definition (your design)
-├── tasks.py            # Task implementations (TODO: implement these)
-├── test_tasks.py       # Unit tests for tasks
-├── run_server.py       # REST API server
-├── test_api.sh         # API testing script
-└── README.md           # This file
+├── flow.py             # Task implementations (TODO: implement these)
+├── api.py              # FastAPI app export
+├── README.md           # This file
+├── tools/              # Scripts and utilities
+│   ├── generate.sh     # Smart scaffold/update
+│   ├── start_server.sh # Start API server
+│   └── test_api.sh     # API testing script
+└── tests/              # Test files
+    └── test_tasks.py   # Unit tests for tasks
 ```
 
 ## Implementation Status
@@ -30,14 +34,14 @@ This project contains a flow definition and scaffolded task implementations. All
 ### 1. Check Current Status
 
 ```bash
-python tasks.py
+python flow.py
 ```
 
 This shows which tasks are pending implementation.
 
 ### 2. Implement Tasks One by One
 
-Each task in `tasks.py` currently raises `NotImplementedTaskError`. Implement them incrementally:
+Each task in `flow.py` currently raises `NotImplementedTaskError`. Implement them incrementally:
 
 ```python
 @registry.register('TaskName')
@@ -55,7 +59,7 @@ async def task_name(param1, param2):
 
 ### 3. Update Implementation Status
 
-After implementing a task, update `get_implementation_status()` in `tasks.py`:
+After implementing a task, update `get_implementation_status()` in `flow.py`:
 
 ```python
 def get_implementation_status() -> Dict[str, Any]:
@@ -69,10 +73,10 @@ def get_implementation_status() -> Dict[str, Any]:
 
 ```bash
 # Run all tests
-pytest test_tasks.py -v
+pytest tests/test_tasks.py -v
 
 # Run specific test
-pytest test_tasks.py::test_task_name -v
+pytest tests/test_tasks.py::test_task_name -v
 ```
 
 Update tests to verify actual behavior instead of expecting `NotImplementedTaskError`.
@@ -82,7 +86,14 @@ Update tests to verify actual behavior instead of expecting `NotImplementedTaskE
 Start the API server to make your flow accessible via HTTP:
 
 ```bash
-python run_server.py
+# Simple way - use the convenience script
+./tools/start_server.sh
+
+# Or with auto-reload for development
+./tools/start_server.sh --reload
+
+# Or use uvicorn directly
+uvicorn api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 The server will start on `http://localhost:8000` with:
@@ -137,7 +148,7 @@ You can also execute flows directly in Python:
 ```python
 import asyncio
 from flowlang import FlowExecutor
-from tasks import create_task_registry
+from flow import create_task_registry
 
 async def main():
     # Load flow
@@ -211,7 +222,7 @@ if __name__ == '__main__':
 
 1. **Start with simple tasks** - Implement logging, validation tasks first
 2. **Use TDD approach** - Write/update tests as you implement
-3. **Check progress frequently** - Run `python tasks.py` to see status
+3. **Check progress frequently** - Run `python flow.py` to see status
 4. **Test incrementally** - Test each task as you complete it
 5. **Mock external dependencies** - Use mock data initially, integrate real APIs later
 
