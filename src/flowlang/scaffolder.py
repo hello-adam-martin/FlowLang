@@ -777,11 +777,12 @@ class FlowScaffolder:
             f'    ',
         ]
 
-        # Add input validation if the task has inputs
+        # Add input validation - verify sample inputs are defined
         if sample_inputs:
-            lines.append(f'    # Verify expected inputs')
+            lines.append(f'    # Verify test inputs are defined')
             for key, value in sample_inputs.items():
-                lines.append(f'    assert {repr(key)} is not None, "Missing required input: {key}"')
+                lines.append(f'    {key} = {repr(value)}')
+                lines.append(f'    assert {key} is not None, "Test input {key} should be defined"')
             lines.append(f'    ')
 
         lines.extend([
