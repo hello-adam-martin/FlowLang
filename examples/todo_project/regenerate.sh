@@ -1,7 +1,10 @@
 #!/bin/bash
-# Update project from flow.yaml using smart merge
-# This preserves your implemented tasks and tests
+# Legacy script - redirects to generate.sh
+# Use generate.sh directly for better experience
 
-echo "🔄 Updating project from flow.yaml..."
-python -m flowlang.scaffolder update flow.yaml -o .
-echo "✅ Done! Check the output above for merge summary."
+echo "⚠️  Note: regenerate.sh is deprecated. Use generate.sh instead."
+echo "Running generate.sh..."
+echo ""
+
+# Call generate.sh
+./generate.sh
