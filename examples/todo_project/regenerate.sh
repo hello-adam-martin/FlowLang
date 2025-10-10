@@ -1,7 +1,7 @@
 #!/bin/bash
-# Regenerate task stubs from flow.yaml
-# Run this script whenever you update the flow definition
+# Update project from flow.yaml using smart merge
+# This preserves your implemented tasks and tests
 
-echo "🔄 Regenerating task stubs from flow.yaml..."
-python -m flowlang.scaffolder flow.yaml -o .
-echo "✅ Done! Check tasks.py, test_tasks.py, and README.md for updates."
+echo "🔄 Updating project from flow.yaml..."
+python -m flowlang.scaffolder update flow.yaml -o .
+echo "✅ Done! Check the output above for merge summary."

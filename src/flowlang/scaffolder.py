@@ -966,11 +966,15 @@ Good luck! 🚀
 
     def scaffold(self, flow_yaml: str, output_dir: str = None):
         """
-        Complete scaffolding: analyze flow and generate all files.
+        Initial scaffolding: create new project from flow definition.
+        FAILS if tasks.py already exists (use update() instead).
 
         Args:
             flow_yaml: YAML string containing flow definition
             output_dir: Directory to output files (uses self.output_dir if None)
+
+        Raises:
+            FileExistsError: If tasks.py already exists in output directory
         """
         if output_dir:
             self.output_dir = Path(output_dir)
@@ -978,13 +982,23 @@ Good luck! 🚀
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Check if tasks.py already exists
+        tasks_path = self.output_dir / 'tasks.py'
+        if tasks_path.exists() and not self.force:
+            print(f"❌ Error: Project already exists at {self.output_dir}")
+            print(f"   Found existing file: {tasks_path}")
+            print(f"\n💡 To update an existing project, use:")
+            print(f"   python -m flowlang.scaffolder update flow.yaml -o {self.output_dir}")
+            print(f"\n⚠️  Or use --force to overwrite (WARNING: destroys all implementations!)")
+            raise FileExistsError(f"Project already exists at {tasks_path}")
+
         # Save flow definition
         flow_path = self.output_dir / 'flow.yaml'
         with open(flow_path, 'w') as f:
             f.write(flow_yaml)
         print(f"💾 Saved flow definition: {flow_path}")
 
-        # Analyze and generate
+        # Analyze and generate (force=False ensures fresh generation)
         self.analyze_flow(flow_yaml)
         self.generate_task_stubs()
         self.generate_tests()
@@ -999,7 +1013,69 @@ Good luck! 🚀
         print(f"  2. python tasks.py          # Check implementation status")
         print(f"  3. Edit tasks.py            # Implement tasks one by one")
         print(f"  4. pytest test_tasks.py     # Run tests")
-        print(f"  5. python run_flow.py       # Execute complete flow (when done)")
+        print(f"\n💡 To update after changing flow.yaml:")
+        print(f"  python -m flowlang.scaffolder update flow.yaml -o {self.output_dir}")
+        print("="*60)
+        print()
+
+    def update(self, flow_yaml: str, output_dir: str = None):
+        """
+        Update existing project: smart merge with implemented code.
+        REQUIRES tasks.py to exist (use scaffold() for new projects).
+
+        Args:
+            flow_yaml: YAML string containing flow definition
+            output_dir: Directory to output files (uses self.output_dir if None)
+
+        Raises:
+            FileNotFoundError: If tasks.py doesn't exist in output directory
+        """
+        if output_dir:
+            self.output_dir = Path(output_dir)
+
+        # Check if tasks.py exists
+        tasks_path = self.output_dir / 'tasks.py'
+        if not tasks_path.exists():
+            print(f"❌ Error: No existing project found at {self.output_dir}")
+            print(f"   Missing file: {tasks_path}")
+            print(f"\n💡 To create a new project, use:")
+            print(f"   python -m flowlang.scaffolder scaffold flow.yaml -o {self.output_dir}")
+            raise FileNotFoundError(f"No existing project at {tasks_path}")
+
+        print(f"🔄 Updating existing project at {self.output_dir}")
+        print(f"   Smart merge will preserve your implementations\n")
+
+        # Update flow definition
+        flow_path = self.output_dir / 'flow.yaml'
+        with open(flow_path, 'w') as f:
+            f.write(flow_yaml)
+        print(f"💾 Updated flow definition: {flow_path}")
+
+        # Analyze and update with smart merge
+        self.analyze_flow(flow_yaml)
+        self.generate_task_stubs()  # Will use merge logic
+        self.generate_tests()        # Will use merge logic
+        self.generate_readme()       # Always regenerated
+
+        print("\n" + "="*60)
+        print("✅ Update complete!")
+        print("="*60)
+
+        # Show merge summary
+        if self.merge_summary['tasks_preserved'] > 0 or self.merge_summary['tests_preserved'] > 0:
+            print(f"\n📊 Smart Merge Summary:")
+            print(f"   Tasks:  {self.merge_summary['tasks_preserved']} preserved, "
+                  f"{self.merge_summary['tasks_added']} added")
+            print(f"   Tests:  {self.merge_summary['tests_preserved']} preserved, "
+                  f"{self.merge_summary['tests_added']} added")
+            if self.merge_summary['tasks_updated'] > 0:
+                print(f"\n⚠️  {self.merge_summary['tasks_updated']} task signatures changed - review manually")
+
+        print(f"\n📋 Next steps:")
+        print(f"  1. Review changes: git diff")
+        print(f"  2. Check status: python tasks.py")
+        print(f"  3. Implement new tasks if any were added")
+        print(f"  4. Run tests: pytest test_tasks.py")
         print("="*60)
         print()
 
@@ -1009,58 +1085,107 @@ Good luck! 🚀
 # ========================================================================
 
 def main():
-    """CLI for scaffolding flows"""
+    """CLI for scaffolding and updating flows"""
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='FlowLang Scaffolder - Generate task stubs from flow definitions',
+        description='FlowLang Scaffolder - Generate and update task stubs from flow definitions',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Scaffold a flow
-  python -m flowlang.scaffolder my_flow.yaml -o ./my_project
+  # Create a new project (scaffold)
+  python -m flowlang.scaffolder scaffold my_flow.yaml -o ./my_project
 
-  # Scaffold to current directory
-  python -m flowlang.scaffolder my_flow.yaml -o .
+  # Update an existing project (smart merge)
+  python -m flowlang.scaffolder update my_flow.yaml -o ./my_project
+
+  # Quick scaffold to current directory
+  python -m flowlang.scaffolder scaffold flow.yaml -o .
 
 For more information, see: https://github.com/hello-adam-martin/FlowLang
         """
     )
-    parser.add_argument(
+
+    subparsers = parser.add_subparsers(dest='command', help='Command to execute')
+
+    # Scaffold command (create new project)
+    scaffold_parser = subparsers.add_parser(
+        'scaffold',
+        help='Create a new project from flow definition (fails if project exists)'
+    )
+    scaffold_parser.add_argument(
         'flow_file',
         help='Path to flow YAML file'
     )
-    parser.add_argument(
+    scaffold_parser.add_argument(
         '-o', '--output',
         default='./flow_project',
         help='Output directory (default: ./flow_project)'
     )
-    parser.add_argument(
+    scaffold_parser.add_argument(
         '--force',
         action='store_true',
-        help='Force regeneration, overwriting implemented code (dangerous!)'
+        help='Force overwrite existing project (WARNING: destroys implementations!)'
+    )
+
+    # Update command (smart merge)
+    update_parser = subparsers.add_parser(
+        'update',
+        help='Update existing project with smart merge (requires project to exist)'
+    )
+    update_parser.add_argument(
+        'flow_file',
+        help='Path to flow YAML file'
+    )
+    update_parser.add_argument(
+        '-o', '--output',
+        default='.',
+        help='Output directory (default: current directory)'
     )
 
     args = parser.parse_args()
 
+    # Check if subcommand was provided
+    if args.command is None:
+        parser.print_help()
+        print("\n❌ Error: Please specify a command (scaffold or update)")
+        return 1
+
+    # Extract arguments from subcommand
+    command = args.command
+    flow_file = args.flow_file
+    output_dir = args.output
+    force = getattr(args, 'force', False)
+
     # Read flow file
     try:
-        with open(args.flow_file, 'r') as f:
+        with open(flow_file, 'r') as f:
             flow_yaml = f.read()
     except FileNotFoundError:
-        print(f"❌ Error: Flow file not found: {args.flow_file}")
+        print(f"❌ Error: Flow file not found: {flow_file}")
         return 1
     except Exception as e:
         print(f"❌ Error reading flow file: {e}")
         return 1
 
-    # Scaffold
+    # Execute command
     try:
-        scaffolder = FlowScaffolder(force=args.force)
-        scaffolder.scaffold(flow_yaml, args.output)
+        scaffolder = FlowScaffolder(output_dir=output_dir, force=force)
+
+        if command == 'scaffold':
+            scaffolder.scaffold(flow_yaml, output_dir)
+        elif command == 'update':
+            scaffolder.update(flow_yaml, output_dir)
+        else:
+            print(f"❌ Unknown command: {command}")
+            return 1
+
         return 0
+    except (FileExistsError, FileNotFoundError) as e:
+        # These are expected errors with helpful messages already printed
+        return 1
     except Exception as e:
-        print(f"❌ Error during scaffolding: {e}")
+        print(f"❌ Error during {command}: {e}")
         import traceback
         traceback.print_exc()
         return 1
