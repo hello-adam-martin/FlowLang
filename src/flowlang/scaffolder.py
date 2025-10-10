@@ -449,7 +449,7 @@ class FlowScaffolder:
         func_name = self._to_snake_case(task_name)
 
         lines = [
-            f"    @registry.register('{task_name}', description='TODO: Add description')",
+            f"    @registry.register('{task_name}', description='TODO: Add description', implemented=False)",
             f"    {async_prefix}def {func_name}({params}):",
             f'        """',
             f'        {task_name} - TODO: Add detailed description',

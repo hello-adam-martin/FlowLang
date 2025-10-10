@@ -38,8 +38,10 @@ class FlowExecuteResponse(BaseModel):
     outputs: Optional[Dict[str, Any]] = Field(None, description="Flow outputs")
     error: Optional[str] = Field(None, description="Error message if failed")
     error_details: Optional[str] = Field(None, description="Detailed error information")
-    execution_time_ms: float = Field(description="Execution time in milliseconds")
+    execution_time_ms: Optional[float] = Field(None, description="Execution time in milliseconds")
     flow: str = Field(description="Name of the executed flow")
+    pending_tasks: Optional[List[str]] = Field(None, description="List of unimplemented tasks (if not ready)")
+    implementation_progress: Optional[str] = Field(None, description="Implementation progress (e.g., '3/5 (60%)')")
 
 
 class FlowInputSchema(BaseModel):
@@ -235,14 +237,24 @@ class FlowServer:
 
         @self.app.get("/health", tags=["Health"])
         async def health():
-            """Health check endpoint"""
+            """
+            Health check endpoint
+
+            Returns service health and implementation status.
+            The 'ready' field is true only when ALL tasks are implemented.
+            """
             status = self.registry.get_implementation_status()
+            all_tasks_implemented = status['unimplemented_count'] == 0
+
             return {
                 "status": "healthy",
                 "flow": self.flow_name,
                 "tasks_implemented": status['implemented'],
                 "tasks_total": status['total'],
-                "ready": status['implemented'] > 0
+                "tasks_pending": status['unimplemented_count'],
+                "implementation_complete": all_tasks_implemented,
+                "ready": all_tasks_implemented,
+                "pending_task_names": status['unimplemented_tasks'] if not all_tasks_implemented else []
             }
 
         @self.app.get("/flows", response_model=List[FlowInfo], tags=["Flows"])
@@ -289,16 +301,44 @@ class FlowServer:
         @self.app.post(
             "/flows/{flow_name}/execute",
             response_model=FlowExecuteResponse,
-            tags=["Execution"]
+            tags=["Execution"],
+            responses={
+                200: {"description": "Flow executed successfully"},
+                503: {"description": "Flow not ready - tasks not yet implemented"}
+            }
         )
         async def execute_flow(flow_name: str, request: self.request_model):
             """
             Execute a flow with the provided inputs.
 
             Returns the flow outputs on success, or error details on failure.
+
+            Returns 503 Service Unavailable if not all tasks are implemented.
             """
             if flow_name != self.flow_name:
                 raise HTTPException(status_code=404, detail=f"Flow not found: {flow_name}")
+
+            # Pre-flight check: verify all tasks are implemented
+            status = self.registry.get_implementation_status()
+            if status['unimplemented_count'] > 0:
+                # Return 503 with detailed information about what's missing
+                pending_tasks = status['unimplemented_tasks']
+                progress = f"{status['implemented']}/{status['total']} ({status['percentage']:.1f}%)"
+
+                response = FlowExecuteResponse(
+                    success=False,
+                    error="Flow not ready for execution",
+                    error_details=f"{status['unimplemented_count']} of {status['total']} tasks are not yet implemented",
+                    execution_time_ms=None,
+                    flow=flow_name,
+                    pending_tasks=pending_tasks,
+                    implementation_progress=progress
+                )
+
+                return JSONResponse(
+                    status_code=503,
+                    content=response.model_dump()
+                )
 
             start_time = time.time()
 
