@@ -434,7 +434,7 @@ class FlowScaffolder:
         inputs_str = ', '.join(f'{k}={repr(v)}' for k, v in sample_inputs.items())
 
         lines = [
-            f'{test_decorator}def test_{func_name}(registry):',
+            f'{test_decorator}{async_prefix}def test_{func_name}(registry):',
             f'    """',
             f'    Test {task_name} task',
             f'    ',
