@@ -13,6 +13,8 @@ This project contains a flow definition and scaffolded task implementations. All
 ├── flow.yaml           # Flow definition (your design)
 ├── tasks.py            # Task implementations (TODO: implement these)
 ├── test_tasks.py       # Unit tests for tasks
+├── run_server.py       # REST API server
+├── test_api.sh         # API testing script
 └── README.md           # This file
 ```
 
@@ -75,9 +77,62 @@ pytest test_tasks.py::test_task_name -v
 
 Update tests to verify actual behavior instead of expecting `NotImplementedTaskError`.
 
-### 5. Run the Complete Flow
+### 5. Run the REST API Server
 
-Once all tasks are implemented:
+Start the API server to make your flow accessible via HTTP:
+
+```bash
+python run_server.py
+```
+
+The server will start on `http://localhost:8000` with:
+- **API Docs**: http://localhost:8000/docs (interactive Swagger UI)
+- **Health Check**: http://localhost:8000/health
+- **Flow Execution**: POST to http://localhost:8000/flows/TodoManager/execute
+
+#### Execute the Flow via REST API
+
+```bash
+# List todos for a user
+curl -X POST http://localhost:8000/flows/TodoManager/execute \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"user_id": "user_123", "action": "list"}}'
+
+# Create a new todo
+curl -X POST http://localhost:8000/flows/TodoManager/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "inputs": {
+      "user_id": "user_123",
+      "action": "create",
+      "title": "Buy groceries",
+      "description": "Milk, bread, eggs"
+    }
+  }'
+```
+
+#### API Response Format
+
+```json
+{
+  "success": true,
+  "outputs": {
+    "result": "todo_xyz123"
+  },
+  "execution_time_ms": 45.2,
+  "flow": "TodoManager"
+}
+```
+
+Or run the test script to test all endpoints:
+
+```bash
+./test_api.sh
+```
+
+### 6. Run the Flow Programmatically (Alternative)
+
+You can also execute flows directly in Python:
 
 ```python
 import asyncio
@@ -97,7 +152,8 @@ async def main():
     result = await executor.execute_flow(
         flow_yaml,
         inputs={
-            # Your flow inputs here
+            "user_id": "user_123",
+            "action": "list"
         }
     )
 

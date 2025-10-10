@@ -8,6 +8,7 @@ from .executor import FlowExecutor
 from .registry import TaskRegistry
 from .context import FlowContext
 from .scaffolder import FlowScaffolder
+from .server import FlowServer, create_server
 from .exceptions import (
     FlowLangError,
     TaskNotFoundError,
@@ -21,6 +22,8 @@ __all__ = [
     "TaskRegistry",
     "FlowContext",
     "FlowScaffolder",
+    "FlowServer",
+    "create_server",
     "FlowLangError",
     "TaskNotFoundError",
     "FlowValidationError",

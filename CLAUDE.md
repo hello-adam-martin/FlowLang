@@ -168,6 +168,8 @@ async def task_name(param1: str, param2: int):
 
 ### Running a Flow
 
+#### Option 1: Direct Execution (Programmatic)
+
 ```python
 from flowlang import FlowExecutor, TaskRegistry
 
@@ -178,6 +180,38 @@ executor = FlowExecutor(registry)
 result = await executor.execute_flow(flow_yaml, inputs={'key': 'value'})
 ```
 
+#### Option 2: REST API Server (Recommended)
+
+```python
+from flowlang.server import FlowServer
+
+# Create server from a project directory
+server = FlowServer(project_dir='./my_project')
+
+# Run the server
+server.run(host='0.0.0.0', port=8000)
+```
+
+Or use the command line:
+
+```bash
+# From a project directory with flow.yaml and tasks.py
+python -m flowlang.server .
+
+# Or create a run_server.py script
+python run_server.py
+```
+
+Then execute flows via HTTP:
+
+```bash
+curl -X POST http://localhost:8000/flows/MyFlow/execute \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"key": "value"}}'
+```
+
+Access interactive API docs at http://localhost:8000/docs
+
 ### Checking Implementation Progress
 
 ```python
@@ -186,18 +220,29 @@ print(f"Progress: {status['progress']}")  # e.g., "15/30"
 print(f"Unimplemented: {status['unimplemented_tasks']}")
 ```
 
+## Implemented Features
+
+1. **Flow Scaffolder** ✅: Auto-generate task stubs from flow YAML with smart merge
+   - `python -m flowlang.scaffolder scaffold flow.yaml -o ./project`
+   - `python -m flowlang.scaffolder update flow.yaml -o ./project`
+
+2. **REST API Server** ✅: FastAPI-based server to expose flows as APIs
+   - See `src/flowlang/server.py`
+   - Example: `examples/todo_project/run_server.py`
+   - Auto-generated OpenAPI docs at `/docs`
+
 ## Planned Features (Not Yet Implemented)
 
 The following features are part of the FlowLang vision but not yet implemented:
 
-1. **Flow Scaffolder**: Auto-generate task stubs from flow YAML
-2. **REST API Server**: FastAPI-based server to expose flows as APIs
-3. **Client SDKs**: Python and TypeScript client libraries
-4. **Subflow Loader**: Load and execute referenced subflows
-5. **Timeout Support**: Task-level timeout enforcement
-6. **Approval Gates**: Human-in-the-loop workflow steps
-7. **Event Triggers**: Webhook-based flow initiation
-8. **Web UI**: Visual flow designer and monitoring dashboard
+1. **Client SDKs**: Python and TypeScript client libraries for calling flows
+2. **Subflow Loader**: Load and execute referenced subflows from other files
+3. **Timeout Support**: Task-level timeout enforcement
+4. **Approval Gates**: Human-in-the-loop workflow steps (pause/resume)
+5. **Event Triggers**: Webhook-based flow initiation
+6. **Web UI**: Visual flow designer and monitoring dashboard
+7. **Authentication**: API key and OAuth support for REST API
+8. **Rate Limiting**: Request throttling for production deployments
 
 ## Design Principles
 
