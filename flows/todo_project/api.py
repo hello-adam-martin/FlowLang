@@ -16,6 +16,7 @@ from flowlang.server import FlowServer
 # Create the server and get the FastAPI app
 server = FlowServer(
     project_dir=".",
+    tasks_file="flow.py",
     title="TodoManager API",
     version="1.0.0"
 )

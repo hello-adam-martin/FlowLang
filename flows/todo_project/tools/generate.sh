@@ -22,8 +22,11 @@ if [ ! -f "$FLOW_FILE" ]; then
     exit 1
 fi
 
-# Check if this is an existing project by looking for tasks.py
-if [ -f "tasks.py" ]; then
+# Move to parent directory (project root)
+cd ..
+
+# Check if this is an existing project by looking for flow.py
+if [ -f "flow.py" ]; then
     echo "📦 Existing project detected"
     echo "🔄 Running UPDATE to preserve your implementations..."
     echo ""
@@ -36,11 +39,11 @@ else
     echo ""
     python -m flowlang.scaffolder scaffold "$FLOW_FILE" -o "$OUTPUT_DIR"
     echo ""
-    echo "✅ Scaffold complete! Start implementing tasks in tasks.py"
+    echo "✅ Scaffold complete! Start implementing tasks in flow.py"
 fi
 
 echo ""
 echo "📝 Next steps:"
-echo "   - Check tasks.py for task stubs to implement"
-echo "   - Run: python run_server.py"
+echo "   - Check flow.py for task stubs to implement"
+echo "   - Run: python tools/run_server.py"
 echo "   - Visit: http://localhost:8000/docs"

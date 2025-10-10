@@ -8,7 +8,13 @@ Implemented tests have been preserved.
 
 import pytest
 import asyncio
-from tasks import create_task_registry
+import sys
+from pathlib import Path
+
+# Add parent directory to path for flow module import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from flow import create_task_registry
 from flowlang.exceptions import NotImplementedTaskError
 
 
@@ -157,7 +163,7 @@ def test_all_tasks_registered(registry):
 
 def test_implementation_progress(registry):
     """Track implementation progress"""
-    from tasks import get_implementation_status
+    from flow import get_implementation_status
     
     status = get_implementation_status()
     print(f"\nImplementation progress: {status['progress']} ({status['percentage']:.1f}%)")

@@ -84,9 +84,10 @@ Examples:
     print("="*70 + "\n")
 
     try:
-        # Create server for current directory (contains flow.yaml and tasks.py)
+        # Create server for parent directory (contains flow.yaml and flow.py)
         server = FlowServer(
-            project_dir=".",
+            project_dir="..",
+            tasks_file="flow.py",
             title="TodoManager API",
             version="1.0.0"
         )
