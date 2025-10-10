@@ -428,6 +428,38 @@ class FlowServer:
                 }
             }
 
+        @self.app.get("/flows/{flow_name}/visualize", tags=["Visualization"])
+        async def visualize_flow(flow_name: str):
+            """
+            Generate a Mermaid diagram visualization of the flow structure.
+
+            Returns a Mermaid flowchart diagram showing:
+            - Flow inputs and outputs
+            - Task steps
+            - Parallel execution
+            - Conditional branching
+            - Loops
+            """
+            if flow_name != self.flow_name:
+                raise HTTPException(status_code=404, detail=f"Flow not found: {flow_name}")
+
+            try:
+                from .visualizer import FlowVisualizer
+
+                visualizer = FlowVisualizer(self.flow_def)
+                diagram = visualizer.generate_mermaid()
+
+                return {
+                    "flow": flow_name,
+                    "diagram": diagram,
+                    "format": "mermaid"
+                }
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error generating visualization: {str(e)}"
+                )
+
         # Exception handlers
         @self.app.exception_handler(HTTPException)
         async def http_exception_handler(request: Request, exc: HTTPException):
@@ -862,6 +894,45 @@ class MultiFlowServer:
                     "percentage": status['percentage']
                 }
             }
+
+        @self.app.get("/flows/{flow_name}/visualize", tags=["Visualization"])
+        async def visualize_flow(flow_name: str):
+            """
+            Generate a Mermaid diagram visualization of the flow structure.
+
+            Returns a Mermaid flowchart diagram showing:
+            - Flow inputs and outputs
+            - Task steps
+            - Parallel execution
+            - Conditional branching
+            - Loops
+            """
+            if flow_name not in self.flows:
+                available = ', '.join(self.flows.keys())
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Flow not found: {flow_name}. Available flows: {available}"
+                )
+
+            try:
+                from .visualizer import FlowVisualizer
+
+                flow_data = self.flows[flow_name]
+                flow_def = flow_data['flow_def']
+
+                visualizer = FlowVisualizer(flow_def)
+                diagram = visualizer.generate_mermaid()
+
+                return {
+                    "flow": flow_name,
+                    "diagram": diagram,
+                    "format": "mermaid"
+                }
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error generating visualization: {str(e)}"
+                )
 
         # Exception handlers
         @self.app.exception_handler(HTTPException)

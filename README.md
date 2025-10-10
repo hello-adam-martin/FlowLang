@@ -222,6 +222,54 @@ Enhanced development experience with autocompletion, validation, and snippets:
 
 See [.vscode/README.md](.vscode/README.md) for complete documentation and all available snippets.
 
+### Flow Visualization
+
+Automatically generate visual diagrams of your flows:
+
+- **Mermaid diagrams**: Visual flowcharts showing flow structure
+- **CLI tool**: Generate diagrams from command line
+- **API endpoint**: Get diagrams via REST API
+- **Auto-generated**: Included in scaffolded project READMEs
+
+**Generate diagram from CLI**:
+```bash
+python -m flowlang.visualizer flow.yaml
+```
+
+**Save to file**:
+```bash
+python -m flowlang.visualizer flow.yaml -o diagram.md
+```
+
+**Get diagram from API**:
+```bash
+curl http://localhost:8000/flows/HelloWorld/visualize
+```
+
+**Example diagram** (rendered in GitHub/editors that support Mermaid):
+
+```mermaid
+flowchart TD
+    node0(("Start"))
+    node1[/"Inputs:<br/>user_name"/]
+    node2["ValidateUser"]
+    node3["Greet"]
+    node4[/"Outputs:<br/>message"/]
+    node5(("End"))
+    node0 --> node1
+    node1 --> node2
+    node2 -->|"validate.is_valid"| node3
+    node3 --> node4
+    node4 --> node5
+```
+
+Diagrams show:
+- Flow inputs and outputs
+- Task execution steps
+- Parallel execution paths
+- Conditional branching
+- Loops and iterations
+
 ## Project Structure
 
 ```
@@ -459,6 +507,7 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
 - Complete documentation generation
 - Multi-flow support with auto-discovery
 - VS Code integration (autocompletion, validation, snippets)
+- Flow visualization (Mermaid diagrams, CLI, API)
 
 🚧 **In Progress**:
 - Client SDKs (Python, TypeScript)
