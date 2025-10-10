@@ -26,11 +26,13 @@ pip install -r requirements.txt
 # Install in development mode
 pip install -e .
 
-# Run quick start example
-python flows/quickstart.py
+# Run example flow project
+cd flows/todo_project
+./tools/start_server.sh
 
-# Run tests (when available)
-pytest tests/
+# Run tests for a flow project
+cd flows/todo_project
+pytest tests/test_tasks.py -v
 ```
 
 ## Project Structure
@@ -42,11 +44,21 @@ FlowLang/
 │   ├── executor.py        # FlowExecutor - main execution engine
 │   ├── context.py         # FlowContext - manages execution state
 │   ├── registry.py        # TaskRegistry - task registration & management
+│   ├── server.py          # FlowServer - REST API server
+│   ├── scaffolder.py      # FlowScaffolder - code generation
+│   ├── scaffolder_merge.py # Smart merge for preserving implementations
 │   └── exceptions.py      # Custom exceptions
-├── flows/                 # Example flows and usage
-│   └── quickstart.py      # Basic examples demonstrating core features
-├── tests/                 # Test suite (to be added)
-├── docs/                  # Documentation (to be added)
+├── flows/                 # Flow project directories
+│   └── todo_project/      # Example TodoManager flow project
+│       ├── flow.yaml      # Flow definition
+│       ├── flow.py        # Task implementations
+│       ├── api.py         # FastAPI app export
+│       ├── README.md      # Project documentation
+│       ├── tools/         # Helper scripts
+│       │   ├── generate.sh     # Smart scaffold/update
+│       │   └── start_server.sh # Server launcher
+│       └── tests/         # Unit tests
+│           └── test_tasks.py
 └── myenv/                # Python virtual environment (not in git)
 ```
 
@@ -73,7 +85,21 @@ FlowLang/
    - Resolves variable references: `${inputs.var}`, `${step_id.output}`
    - Handles nested field access: `${step.output.nested.field}`
 
-4. **Exceptions** (src/flowlang/exceptions.py)
+4. **FlowServer** (src/flowlang/server.py)
+   - FastAPI-based REST API server
+   - Auto-loads flow.yaml and flow.py from project directory
+   - Dynamically generates Pydantic models for request/response validation
+   - Provides endpoints: /, /health, /flows, /flows/{name}/execute, /flows/{name}/tasks
+   - Includes OpenAPI/Swagger documentation at /docs
+
+5. **FlowScaffolder** (src/flowlang/scaffolder.py)
+   - Generates complete project structure from flow YAML
+   - Creates flow.py (task stubs), api.py, tests/, tools/, README.md
+   - Smart merge preserves implemented tasks during updates
+   - Supports scaffold (new project) and update (existing project) modes
+   - Tracks implementation progress automatically
+
+6. **Exceptions** (src/flowlang/exceptions.py)
    - `FlowLangError` - Base exception
    - `TaskNotFoundError` - Task not registered
    - `NotImplementedTaskError` - Task is a stub
@@ -143,13 +169,27 @@ The FlowContext resolves variables using the pattern `${path}`:
    - Update `FlowContext._resolve_variable_path()` or `_resolve_string()`
    - Add tests for new resolution patterns
 
+4. **For scaffolder improvements**:
+   - Modify generation methods in `FlowScaffolder` class
+   - Update templates for generated files (flow.py, api.py, tests, README)
+   - Test both scaffold and update modes with smart merge
+   - Ensure backward compatibility with existing projects
+
+5. **For server enhancements**:
+   - Modify `FlowServer` class in `src/flowlang/server.py`
+   - Update endpoint handlers or add new endpoints
+   - Update Pydantic model generation if needed
+   - Test with example projects in flows/
+
 ### Testing Strategy
 
 When adding tests:
 - Unit tests for individual components (Context, Registry, Executor methods)
 - Integration tests for complete flow execution
 - Use pytest with pytest-asyncio for async tests
-- Create fixture flows in `tests/fixtures/`
+- Test scaffolder by generating new projects and verifying structure
+- Test server by running flow projects and calling API endpoints
+- Generated projects include test files in tests/ subdirectory
 
 ## Common Tasks
 
@@ -192,14 +232,15 @@ server = FlowServer(project_dir='./my_project')
 server.run(host='0.0.0.0', port=8000)
 ```
 
-Or use the command line:
+Or use the generated helper scripts in a flow project:
 
 ```bash
-# From a project directory with flow.yaml and tasks.py
-python -m flowlang.server .
+# From a flow project directory
+cd flows/todo_project
+./tools/start_server.sh
 
-# Or create a run_server.py script
-python run_server.py
+# Or with auto-reload for development
+./tools/start_server.sh --reload
 ```
 
 Then execute flows via HTTP:
@@ -222,14 +263,24 @@ print(f"Unimplemented: {status['unimplemented_tasks']}")
 
 ## Implemented Features
 
-1. **Flow Scaffolder** ✅: Auto-generate task stubs from flow YAML with smart merge
-   - `python -m flowlang.scaffolder scaffold flow.yaml -o ./project`
-   - `python -m flowlang.scaffolder update flow.yaml -o ./project`
+1. **Flow Scaffolder** ✅: Auto-generate complete project structure from flow YAML
+   - Scaffold new projects: `python -m flowlang.scaffolder scaffold flow.yaml -o ./project`
+   - Update existing projects: `python -m flowlang.scaffolder update flow.yaml -o ./project`
+   - Generates: flow.py, api.py, tests/, tools/, README.md
+   - Smart merge preserves implemented tasks during updates
+   - Progress tracking built-in
 
 2. **REST API Server** ✅: FastAPI-based server to expose flows as APIs
    - See `src/flowlang/server.py`
-   - Example: `flows/todo_project/run_server.py`
-   - Auto-generated OpenAPI docs at `/docs`
+   - Auto-generated in every project as `api.py`
+   - Dynamic Pydantic models from flow definition
+   - OpenAPI/Swagger docs at `/docs`
+   - Health checks, flow execution, task status endpoints
+
+3. **Helper Scripts** ✅: Auto-generated tools for every project
+   - `tools/start_server.sh`: Convenient server launcher
+   - `tools/generate.sh`: Smart scaffold/update wrapper
+   - Both scripts handle virtual environment activation
 
 ## Planned Features (Not Yet Implemented)
 
