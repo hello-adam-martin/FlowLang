@@ -243,7 +243,29 @@ curl -X POST http://localhost:8000/flows/HelloWorld/execute \
 }
 ```
 
-### Check Flow Status
+### Check Health and Readiness
+
+```bash
+curl http://localhost:8000/health
+```
+
+Returns:
+```json
+{
+  "status": "healthy",
+  "flow": "HelloWorld",
+  "tasks_implemented": 2,
+  "tasks_total": 2,
+  "tasks_pending": 0,
+  "implementation_complete": true,
+  "ready": true,
+  "pending_task_names": []
+}
+```
+
+**Note**: `ready` is `true` only when ALL tasks are implemented. The API returns HTTP 503 if you try to execute a flow with unimplemented tasks.
+
+### Check Task Status
 
 ```bash
 curl http://localhost:8000/flows/HelloWorld/tasks
