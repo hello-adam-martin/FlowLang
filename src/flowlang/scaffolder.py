@@ -733,7 +733,12 @@ class FlowScaffolder:
         ]
         is_async = any(word in task_name.lower() for word in async_patterns)
 
-        test_decorator = '@pytest.mark.asyncio\n' if is_async else ''
+        # Build decorators
+        decorators = []
+        decorators.append('@pytest.mark.skip(reason="Task not yet implemented")')
+        if is_async:
+            decorators.append('@pytest.mark.asyncio')
+
         async_prefix = 'async ' if is_async else ''
         await_prefix = 'await ' if is_async else ''
 
@@ -762,20 +767,27 @@ class FlowScaffolder:
 
         inputs_str = ', '.join(f'{k}={repr(v)}' for k, v in sample_inputs.items())
 
-        lines = [
-            f'{test_decorator}{async_prefix}def test_{func_name}(registry):',
+        lines = []
+        for decorator in decorators:
+            lines.append(decorator)
+        lines.extend([
+            f'{async_prefix}def test_{func_name}(registry):',
             f'    """',
             f'    Test {task_name} task',
             f'    ',
-            f'    TODO: After implementing the task, update this test to verify:',
-            f'    - Correct output structure',
-            f'    - Expected values',
-            f'    - Error handling',
+            f'    This test is skipped until the task is implemented.',
+            f'    ',
+            f'    After implementing the task:',
+            f'    1. Remove the @pytest.mark.skip decorator',
+            f'    2. Update this test to verify:',
+            f'       - Correct output structure',
+            f'       - Expected values',
+            f'       - Error handling',
             f'    """',
             f'    # Get the task',
             f'    task = registry.get_task(\'{task_name}\')',
             f'    ',
-        ]
+        ])
 
         # Add input validation - verify sample inputs are defined
         if sample_inputs:
