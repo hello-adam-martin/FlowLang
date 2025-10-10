@@ -1,0 +1,49 @@
+flow: TodoManager
+description: A simple todo list management flow
+
+inputs:
+  - name: user_id
+    type: string
+    required: true
+  - name: action
+    type: string
+    required: true
+
+steps:
+  - task: ValidateUser
+    id: validate
+    inputs:
+      user_id: ${inputs.user_id}
+
+  - if: ${inputs.action} == create
+    then:
+      - task: CreateTodo
+        id: create_todo
+        inputs:
+          user_id: ${inputs.user_id}
+          title: ${inputs.title}
+          description: ${inputs.description}
+
+      - task: SendNotification
+        id: notify_create
+        inputs:
+          user_id: ${inputs.user_id}
+          message: "Todo created successfully"
+
+    else:
+      - if: ${inputs.action} == list
+        then:
+          - task: GetTodos
+            id: list_todos
+            inputs:
+              user_id: ${inputs.user_id}
+
+        else:
+          - task: LogInvalidAction
+            id: log_error
+            inputs:
+              action: ${inputs.action}
+
+outputs:
+  - name: result
+    value: ${create_todo.todo_id}
