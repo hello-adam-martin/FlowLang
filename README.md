@@ -22,7 +22,7 @@ FlowLang lets you design workflows in simple YAML, then automatically generates 
 pip install -r requirements.txt
 
 # Run a simple example
-python examples/quickstart.py
+python flows/quickstart.py
 ```
 
 ## Example Flow

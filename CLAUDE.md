@@ -27,7 +27,7 @@ pip install -r requirements.txt
 pip install -e .
 
 # Run quick start example
-python examples/quickstart.py
+python flows/quickstart.py
 
 # Run tests (when available)
 pytest tests/
@@ -43,7 +43,7 @@ FlowLang/
 │   ├── context.py         # FlowContext - manages execution state
 │   ├── registry.py        # TaskRegistry - task registration & management
 │   └── exceptions.py      # Custom exceptions
-├── examples/              # Example flows and usage
+├── flows/                 # Example flows and usage
 │   └── quickstart.py      # Basic examples demonstrating core features
 ├── tests/                 # Test suite (to be added)
 ├── docs/                  # Documentation (to be added)
@@ -133,7 +133,7 @@ The FlowContext resolves variables using the pattern `${path}`:
    - Add parsing logic in `FlowExecutor._execute_step()`
    - Implement execution method (e.g., `_execute_new_type()`)
    - Update flow validation in `_validate_flow()`
-   - Add examples in `examples/`
+   - Add examples in `flows/`
 
 2. **For task registry enhancements**:
    - Modify `TaskRegistry` class in `src/flowlang/registry.py`
@@ -228,7 +228,7 @@ print(f"Unimplemented: {status['unimplemented_tasks']}")
 
 2. **REST API Server** ✅: FastAPI-based server to expose flows as APIs
    - See `src/flowlang/server.py`
-   - Example: `examples/todo_project/run_server.py`
+   - Example: `flows/todo_project/run_server.py`
    - Auto-generated OpenAPI docs at `/docs`
 
 ## Planned Features (Not Yet Implemented)
