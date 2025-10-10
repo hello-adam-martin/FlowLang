@@ -44,3 +44,8 @@ htmlcov/
 # Distribution / packaging
 *.manifest
 *.spec
+
+# Backup files
+*.backup
+*.bak
+*~
