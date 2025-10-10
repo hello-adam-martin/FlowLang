@@ -42,12 +42,26 @@ class FlowExecuteResponse(BaseModel):
     flow: str = Field(description="Name of the executed flow")
 
 
+class FlowInputSchema(BaseModel):
+    """Schema for a flow input parameter"""
+    name: str
+    type: str
+    required: bool = False
+    description: Optional[str] = None
+
+
+class FlowOutputSchema(BaseModel):
+    """Schema for a flow output"""
+    name: str
+    value: Optional[str] = None
+
+
 class FlowInfo(BaseModel):
     """Information about a flow"""
     name: str
     description: Optional[str] = None
-    inputs: List[Dict[str, Any]] = Field(default_factory=list)
-    outputs: List[Dict[str, Any]] = Field(default_factory=list)
+    inputs: List[FlowInputSchema] = Field(default_factory=list)
+    outputs: List[FlowOutputSchema] = Field(default_factory=list)
 
 
 class FlowServer:
@@ -234,12 +248,20 @@ class FlowServer:
         @self.app.get("/flows", response_model=List[FlowInfo], tags=["Flows"])
         async def list_flows():
             """List all available flows"""
+            # Convert inputs and outputs to proper schema objects
+            inputs = [
+                FlowInputSchema(**inp) for inp in self.flow_def.get('inputs', [])
+            ]
+            outputs = [
+                FlowOutputSchema(**out) for out in self.flow_def.get('outputs', [])
+            ]
+
             return [
                 FlowInfo(
                     name=self.flow_name,
                     description=self.flow_def.get('description'),
-                    inputs=self.flow_def.get('inputs', []),
-                    outputs=self.flow_def.get('outputs', [])
+                    inputs=inputs,
+                    outputs=outputs
                 )
             ]
 
@@ -249,11 +271,19 @@ class FlowServer:
             if flow_name != self.flow_name:
                 raise HTTPException(status_code=404, detail=f"Flow not found: {flow_name}")
 
+            # Convert inputs and outputs to proper schema objects
+            inputs = [
+                FlowInputSchema(**inp) for inp in self.flow_def.get('inputs', [])
+            ]
+            outputs = [
+                FlowOutputSchema(**out) for out in self.flow_def.get('outputs', [])
+            ]
+
             return FlowInfo(
                 name=self.flow_name,
                 description=self.flow_def.get('description'),
-                inputs=self.flow_def.get('inputs', []),
-                outputs=self.flow_def.get('outputs', [])
+                inputs=inputs,
+                outputs=outputs
             )
 
         @self.app.post(
