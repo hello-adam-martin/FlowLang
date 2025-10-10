@@ -9,22 +9,34 @@ echo "Starting TodoManager API Server..."
 echo "========================================"
 echo ""
 
-# Check if virtual environment exists
-if [ ! -d "../myenv" ]; then
-    echo "❌ Virtual environment not found at ../myenv"
-    echo "Please create it first with: python -m venv myenv"
-    exit 1
+# Activate virtual environment if it exists
+# Check common locations: ../../myenv (FlowLang root), ../myenv, ./myenv
+VENV_ACTIVATED=false
+if [ -d "../../myenv" ]; then
+    echo "🐍 Activating virtual environment: ../../myenv"
+    source ../../myenv/bin/activate
+    VENV_ACTIVATED=true
+elif [ -d "../myenv" ]; then
+    echo "🐍 Activating virtual environment: ../myenv"
+    source ../myenv/bin/activate
+    VENV_ACTIVATED=true
+elif [ -d "myenv" ]; then
+    echo "🐍 Activating virtual environment: ./myenv"
+    source myenv/bin/activate
+    VENV_ACTIVATED=true
+else
+    echo "⚠️  No virtual environment found"
+    echo "   Checked: ../../myenv, ../myenv, ./myenv"
+    echo "   Continuing without virtual environment..."
 fi
-
-# Activate virtual environment
-source ../myenv/bin/activate
 
 # Check if dependencies are installed
 if ! python -c "import fastapi" 2>/dev/null; then
     echo "❌ FastAPI not installed. Installing dependencies..."
-    pip install -r ../requirements.txt
+    pip install -r ../../requirements.txt 2>/dev/null || pip install -r ../requirements.txt 2>/dev/null || pip install fastapi uvicorn pyyaml
 fi
 
+echo ""
 echo "Starting server with uvicorn..."
 echo "📖 API Docs: http://localhost:8000/docs"
 echo "🔍 Health: http://localhost:8000/health"
