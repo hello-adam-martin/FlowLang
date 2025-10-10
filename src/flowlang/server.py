@@ -16,7 +16,7 @@ import importlib.util
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 import yaml
 import uvicorn
 
@@ -89,6 +89,9 @@ class FlowServer:
         # Create executor
         self.executor = FlowExecutor(self.registry)
 
+        # Create dynamic request model based on flow inputs
+        self.request_model = self._create_request_model()
+
         # Create FastAPI app
         self.app = FastAPI(
             title=title,
@@ -140,6 +143,63 @@ class FlowServer:
         registry = tasks_module.create_task_registry()
 
         return registry
+
+    def _create_request_model(self) -> type[BaseModel]:
+        """
+        Create a dynamic Pydantic model based on flow inputs.
+        This makes the API docs show the actual input fields instead of generic Dict.
+        """
+        inputs_def = self.flow_def.get('inputs', [])
+
+        if not inputs_def:
+            # No inputs defined, use generic model
+            return FlowExecuteRequest
+
+        # Build field definitions for Pydantic
+        field_definitions = {}
+
+        # Map flow types to Python types
+        type_mapping = {
+            'string': str,
+            'integer': int,
+            'int': int,
+            'number': float,
+            'float': float,
+            'boolean': bool,
+            'bool': bool,
+            'object': dict,
+            'array': list,
+            'list': list,
+        }
+
+        for input_def in inputs_def:
+            name = input_def.get('name')
+            type_str = input_def.get('type', 'string')
+            required = input_def.get('required', False)
+            description = input_def.get('description', '')
+
+            # Get Python type
+            python_type = type_mapping.get(type_str.lower(), str)
+
+            # Create field with proper annotation
+            if required:
+                field_definitions[name] = (python_type, Field(..., description=description or f"{name} (required)"))
+            else:
+                field_definitions[name] = (Optional[python_type], Field(None, description=description or f"{name} (optional)"))
+
+        # Create dynamic model
+        DynamicInputModel = create_model(
+            f'{self.flow_name}Inputs',
+            **field_definitions
+        )
+
+        # Create the request wrapper model
+        RequestModel = create_model(
+            f'{self.flow_name}Request',
+            inputs=(DynamicInputModel, Field(..., description=f"Input parameters for {self.flow_name} flow"))
+        )
+
+        return RequestModel
 
     def _register_routes(self):
         """Register FastAPI routes"""
@@ -201,7 +261,7 @@ class FlowServer:
             response_model=FlowExecuteResponse,
             tags=["Execution"]
         )
-        async def execute_flow(flow_name: str, request: FlowExecuteRequest):
+        async def execute_flow(flow_name: str, request: self.request_model):
             """
             Execute a flow with the provided inputs.
 
@@ -213,10 +273,19 @@ class FlowServer:
             start_time = time.time()
 
             try:
+                # Convert request inputs to dict
+                # The dynamic model has an 'inputs' field containing the actual input values
+                if hasattr(request, 'inputs'):
+                    # Dynamic model case - inputs is a nested Pydantic model
+                    inputs_dict = request.inputs.model_dump(exclude_none=False)
+                else:
+                    # Fallback for generic model
+                    inputs_dict = request.dict().get('inputs', {})
+
                 # Execute the flow
                 result = await self.executor.execute_flow(
                     self.flow_yaml,
-                    inputs=request.inputs
+                    inputs=inputs_dict
                 )
 
                 execution_time = (time.time() - start_time) * 1000
