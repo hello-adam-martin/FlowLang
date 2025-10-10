@@ -1064,7 +1064,10 @@ FLOW_FILE="flow.yaml"
 OUTPUT_DIR="."
 
 # Activate virtual environment if it exists
-if [ -d "../myenv" ]; then
+# Check common locations: ../../myenv (FlowLang root), ../myenv, ./myenv
+if [ -d "../../myenv" ]; then
+    source ../../myenv/bin/activate
+elif [ -d "../myenv" ]; then
     source ../myenv/bin/activate
 elif [ -d "myenv" ]; then
     source myenv/bin/activate
