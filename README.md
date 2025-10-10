@@ -158,6 +158,39 @@ Every flow gets a production-ready REST API:
 - **Type validation**: Pydantic models from flow definition
 - **Error handling**: Proper HTTP status codes and error messages
 
+### Multi-Flow Support
+
+Serve multiple flows from a single API server:
+
+- **Single endpoint**: One server process for all your workflows
+- **Auto-discovery**: Automatically detects flows in subdirectories
+- **Aggregate health**: Monitor readiness of all flows at once
+- **Per-flow isolation**: Each flow has its own executor and task registry
+
+**Directory structure**:
+```
+flows/
+├── user_auth/
+│   ├── flow.yaml
+│   └── flow.py
+├── todo_manager/
+│   ├── flow.yaml
+│   └── flow.py
+└── notifications/
+    ├── flow.yaml
+    └── flow.py
+```
+
+**Start multi-flow server**:
+```bash
+python -m flowlang.server --multi flows
+```
+
+**API endpoints remain the same**:
+- `/flows` - List all flows
+- `/flows/{flow_name}/execute` - Execute specific flow
+- `/health` - Shows aggregate status for all flows
+
 ## Project Structure
 
 ```
@@ -245,6 +278,7 @@ curl -X POST http://localhost:8000/flows/HelloWorld/execute \
 
 ### Check Health and Readiness
 
+**Single flow mode**:
 ```bash
 curl http://localhost:8000/health
 ```
@@ -263,7 +297,48 @@ Returns:
 }
 ```
 
-**Note**: `ready` is `true` only when ALL tasks are implemented. The API returns HTTP 503 if you try to execute a flow with unimplemented tasks.
+**Multi-flow mode**:
+```bash
+curl http://localhost:8000/health
+```
+
+Returns aggregate status:
+```json
+{
+  "status": "healthy",
+  "server_type": "multi-flow",
+  "flows_count": 2,
+  "all_flows_ready": false,
+  "aggregate_tasks": {
+    "total": 7,
+    "implemented": 5,
+    "pending": 2,
+    "progress": "5/7"
+  },
+  "flows": [
+    {
+      "name": "UserAuth",
+      "ready": true,
+      "tasks_implemented": 3,
+      "tasks_total": 3,
+      "tasks_pending": 0,
+      "progress": "3/3",
+      "pending_task_names": []
+    },
+    {
+      "name": "TodoManager",
+      "ready": false,
+      "tasks_implemented": 2,
+      "tasks_total": 4,
+      "tasks_pending": 2,
+      "progress": "2/4",
+      "pending_task_names": ["DeleteTodo", "UpdateTodo"]
+    }
+  ]
+}
+```
+
+**Note**: `ready` is `true` only when ALL tasks are implemented. The API returns HTTP 503 if you try to execute a flow with unimplemented tasks. In multi-flow mode, `all_flows_ready` is true only when ALL flows are ready.
 
 ### Check Task Status
 
@@ -348,9 +423,10 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
 - Variable resolution and context management
 - Task registry with progress tracking
 - Smart scaffolder with merge capabilities
-- REST API server with FastAPI
+- REST API server with FastAPI (single and multi-flow modes)
 - Auto-generated project structure
 - Complete documentation generation
+- Multi-flow support with auto-discovery
 
 🚧 **In Progress**:
 - Client SDKs (Python, TypeScript)

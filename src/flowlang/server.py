@@ -499,6 +499,441 @@ class FlowServer:
         )
 
 
+class MultiFlowServer:
+    """
+    FastAPI server that serves multiple FlowLang flows from a directory structure.
+
+    Automatically discovers flows in subdirectories and exposes them through unified endpoints.
+
+    Directory structure:
+        flows_root/
+        ├── flow1/
+        │   ├── flow.yaml
+        │   └── flow.py
+        ├── flow2/
+        │   ├── flow.yaml
+        │   └── flow.py
+        └── ...
+    """
+
+    def __init__(
+        self,
+        flows_dir: str = ".",
+        title: str = "FlowLang Multi-Flow API",
+        version: str = "1.0.0"
+    ):
+        """
+        Initialize the multi-flow server.
+
+        Args:
+            flows_dir: Root directory containing flow subdirectories
+            title: API title for OpenAPI docs
+            version: API version
+        """
+        self.flows_dir = Path(flows_dir).absolute()
+        self.flows = {}  # {flow_name: {'executor': ..., 'registry': ..., 'flow_def': ..., 'flow_yaml': ...}}
+
+        # Discover and load all flows
+        self._discover_flows()
+
+        # Create FastAPI app
+        self.app = FastAPI(
+            title=title,
+            version=version,
+            description=f"FlowLang Multi-Flow API serving {len(self.flows)} flows"
+        )
+
+        # Register routes
+        self._register_routes()
+
+    def _discover_flows(self):
+        """Discover and load all flow projects in subdirectories"""
+        print(f"🔍 Discovering flows in: {self.flows_dir}")
+        print("="*60)
+
+        if not self.flows_dir.exists():
+            raise FileNotFoundError(f"Flows directory not found: {self.flows_dir}")
+
+        # Scan for subdirectories containing flow.yaml and flow.py
+        for item in self.flows_dir.iterdir():
+            if not item.is_dir():
+                continue
+
+            flow_yaml_path = item / "flow.yaml"
+            flow_py_path = item / "flow.py"
+
+            # Check if this is a valid flow project
+            if not (flow_yaml_path.exists() and flow_py_path.exists()):
+                continue
+
+            try:
+                # Load flow definition
+                with open(flow_yaml_path, 'r') as f:
+                    flow_yaml = f.read()
+
+                flow_def = yaml.safe_load(flow_yaml)
+                flow_name = flow_def.get('flow', item.name)
+
+                # Load task registry
+                sys.path.insert(0, str(item))
+                spec = importlib.util.spec_from_file_location(f"flow_{item.name}", flow_py_path)
+                if spec is None or spec.loader is None:
+                    print(f"  ⚠️  Skipping {item.name}: Could not load flow.py")
+                    continue
+
+                flow_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(flow_module)
+
+                if not hasattr(flow_module, 'create_task_registry'):
+                    print(f"  ⚠️  Skipping {item.name}: No create_task_registry() function")
+                    continue
+
+                registry = flow_module.create_task_registry()
+                executor = FlowExecutor(registry)
+
+                # Store flow data
+                self.flows[flow_name] = {
+                    'executor': executor,
+                    'registry': registry,
+                    'flow_def': flow_def,
+                    'flow_yaml': flow_yaml,
+                    'project_dir': item
+                }
+
+                status = registry.get_implementation_status()
+                ready = "✅" if status['unimplemented_count'] == 0 else "⚠️"
+                print(f"  {ready} Loaded: {flow_name} ({status['progress']} tasks)")
+
+            except Exception as e:
+                print(f"  ❌ Error loading {item.name}: {e}")
+                continue
+
+        if not self.flows:
+            raise ValueError(f"No valid flows found in {self.flows_dir}")
+
+        print("="*60)
+        print(f"✅ Loaded {len(self.flows)} flows successfully\n")
+
+    def _register_routes(self):
+        """Register FastAPI routes for all flows"""
+
+        @self.app.get("/", tags=["Info"])
+        async def root():
+            """API root - returns basic information"""
+            return {
+                "service": "FlowLang Multi-Flow API Server",
+                "version": self.app.version,
+                "flows_loaded": len(self.flows),
+                "flows": list(self.flows.keys()),
+                "docs": "/docs",
+                "endpoints": {
+                    "health": "/health",
+                    "list_flows": "/flows",
+                    "flow_info": "/flows/{flow_name}",
+                    "execute": "/flows/{flow_name}/execute",
+                    "tasks": "/flows/{flow_name}/tasks"
+                }
+            }
+
+        @self.app.get("/health", tags=["Health"])
+        async def health():
+            """
+            Health check endpoint showing status of all flows.
+
+            Returns aggregate readiness: ready only if ALL flows are ready.
+            """
+            flow_statuses = []
+            all_ready = True
+            total_tasks = 0
+            total_implemented = 0
+
+            for flow_name, flow_data in self.flows.items():
+                status = flow_data['registry'].get_implementation_status()
+                flow_ready = status['unimplemented_count'] == 0
+                all_ready = all_ready and flow_ready
+                total_tasks += status['total']
+                total_implemented += status['implemented']
+
+                flow_statuses.append({
+                    "name": flow_name,
+                    "ready": flow_ready,
+                    "tasks_implemented": status['implemented'],
+                    "tasks_total": status['total'],
+                    "tasks_pending": status['unimplemented_count'],
+                    "progress": status['progress'],
+                    "pending_task_names": status['unimplemented_tasks'] if not flow_ready else []
+                })
+
+            return {
+                "status": "healthy",
+                "server_type": "multi-flow",
+                "flows_count": len(self.flows),
+                "all_flows_ready": all_ready,
+                "aggregate_tasks": {
+                    "total": total_tasks,
+                    "implemented": total_implemented,
+                    "pending": total_tasks - total_implemented,
+                    "progress": f"{total_implemented}/{total_tasks}"
+                },
+                "flows": flow_statuses
+            }
+
+        @self.app.get("/flows", response_model=List[FlowInfo], tags=["Flows"])
+        async def list_flows():
+            """List all available flows"""
+            flows_list = []
+
+            for flow_name, flow_data in self.flows.items():
+                flow_def = flow_data['flow_def']
+
+                inputs = [
+                    FlowInputSchema(**inp) for inp in flow_def.get('inputs', [])
+                ]
+                outputs = [
+                    FlowOutputSchema(**out) for out in flow_def.get('outputs', [])
+                ]
+
+                flows_list.append(FlowInfo(
+                    name=flow_name,
+                    description=flow_def.get('description'),
+                    inputs=inputs,
+                    outputs=outputs
+                ))
+
+            return flows_list
+
+        @self.app.get("/flows/{flow_name}", response_model=FlowInfo, tags=["Flows"])
+        async def get_flow_info(flow_name: str):
+            """Get information about a specific flow"""
+            if flow_name not in self.flows:
+                available = ', '.join(self.flows.keys())
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Flow not found: {flow_name}. Available flows: {available}"
+                )
+
+            flow_def = self.flows[flow_name]['flow_def']
+
+            inputs = [
+                FlowInputSchema(**inp) for inp in flow_def.get('inputs', [])
+            ]
+            outputs = [
+                FlowOutputSchema(**out) for out in flow_def.get('outputs', [])
+            ]
+
+            return FlowInfo(
+                name=flow_name,
+                description=flow_def.get('description'),
+                inputs=inputs,
+                outputs=outputs
+            )
+
+        @self.app.post(
+            "/flows/{flow_name}/execute",
+            response_model=FlowExecuteResponse,
+            tags=["Execution"],
+            responses={
+                200: {"description": "Flow executed successfully"},
+                404: {"description": "Flow not found"},
+                503: {"description": "Flow not ready - tasks not yet implemented"}
+            }
+        )
+        async def execute_flow(flow_name: str, request: FlowExecuteRequest):
+            """
+            Execute a flow with the provided inputs.
+
+            Returns the flow outputs on success, or error details on failure.
+            Returns 503 Service Unavailable if not all tasks are implemented.
+            """
+            if flow_name not in self.flows:
+                available = ', '.join(self.flows.keys())
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Flow not found: {flow_name}. Available flows: {available}"
+                )
+
+            flow_data = self.flows[flow_name]
+            registry = flow_data['registry']
+            executor = flow_data['executor']
+            flow_yaml = flow_data['flow_yaml']
+
+            # Pre-flight check: verify all tasks are implemented
+            status = registry.get_implementation_status()
+            if status['unimplemented_count'] > 0:
+                pending_tasks = status['unimplemented_tasks']
+                progress = f"{status['implemented']}/{status['total']} ({status['percentage']:.1f}%)"
+
+                response = FlowExecuteResponse(
+                    success=False,
+                    error="Flow not ready for execution",
+                    error_details=f"{status['unimplemented_count']} of {status['total']} tasks are not yet implemented",
+                    execution_time_ms=None,
+                    flow=flow_name,
+                    pending_tasks=pending_tasks,
+                    implementation_progress=progress
+                )
+
+                return JSONResponse(
+                    status_code=503,
+                    content=response.model_dump()
+                )
+
+            start_time = time.time()
+
+            try:
+                # Execute the flow
+                result = await executor.execute_flow(
+                    flow_yaml,
+                    inputs=request.inputs
+                )
+
+                execution_time = (time.time() - start_time) * 1000
+
+                if result['success']:
+                    return FlowExecuteResponse(
+                        success=True,
+                        outputs=result.get('outputs', {}),
+                        execution_time_ms=execution_time,
+                        flow=flow_name
+                    )
+                else:
+                    error_msg = result.get('error', 'Unknown error')
+                    return FlowExecuteResponse(
+                        success=False,
+                        error=str(error_msg),
+                        error_details=result.get('error_details'),
+                        execution_time_ms=execution_time,
+                        flow=flow_name
+                    )
+
+            except NotImplementedTaskError as e:
+                execution_time = (time.time() - start_time) * 1000
+                return FlowExecuteResponse(
+                    success=False,
+                    error=f"Task not implemented: {str(e)}",
+                    error_details="One or more tasks in the flow are not yet implemented",
+                    execution_time_ms=execution_time,
+                    flow=flow_name
+                )
+
+            except FlowLangError as e:
+                execution_time = (time.time() - start_time) * 1000
+                return FlowExecuteResponse(
+                    success=False,
+                    error=str(e),
+                    error_details=traceback.format_exc(),
+                    execution_time_ms=execution_time,
+                    flow=flow_name
+                )
+
+            except Exception as e:
+                execution_time = (time.time() - start_time) * 1000
+                return FlowExecuteResponse(
+                    success=False,
+                    error=f"Unexpected error: {str(e)}",
+                    error_details=traceback.format_exc(),
+                    execution_time_ms=execution_time,
+                    flow=flow_name
+                )
+
+        @self.app.get("/flows/{flow_name}/tasks", tags=["Tasks"])
+        async def list_tasks(flow_name: str):
+            """List all tasks for a flow with implementation status"""
+            if flow_name not in self.flows:
+                available = ', '.join(self.flows.keys())
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Flow not found: {flow_name}. Available flows: {available}"
+                )
+
+            flow_data = self.flows[flow_name]
+            registry = flow_data['registry']
+
+            tasks = registry.list_tasks()
+            status = registry.get_implementation_status()
+
+            return {
+                "flow": flow_name,
+                "tasks": tasks,
+                "summary": {
+                    "total": status['total'],
+                    "implemented": status['implemented'],
+                    "pending": status['pending'],
+                    "percentage": status['percentage']
+                }
+            }
+
+        # Exception handlers
+        @self.app.exception_handler(HTTPException)
+        async def http_exception_handler(request: Request, exc: HTTPException):
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "success": False,
+                    "error": exc.detail,
+                    "status_code": exc.status_code
+                }
+            )
+
+        @self.app.exception_handler(Exception)
+        async def general_exception_handler(request: Request, exc: Exception):
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "error": f"Internal server error: {str(exc)}",
+                    "error_details": traceback.format_exc(),
+                    "status_code": 500
+                }
+            )
+
+    def run(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8000,
+        reload: bool = False,
+        log_level: str = "info"
+    ):
+        """
+        Start the FastAPI server.
+
+        Args:
+            host: Host to bind to (default: 0.0.0.0)
+            port: Port to bind to (default: 8000)
+            reload: Enable auto-reload on code changes
+            log_level: Logging level (debug, info, warning, error)
+        """
+        print("="*60)
+        print(f"🚀 Starting FlowLang Multi-Flow API Server")
+        print("="*60)
+        print(f"Flows Directory: {self.flows_dir}")
+        print(f"Flows Loaded: {len(self.flows)}")
+
+        for flow_name, flow_data in self.flows.items():
+            status = flow_data['registry'].get_implementation_status()
+            ready = "✅" if status['unimplemented_count'] == 0 else "⚠️"
+            print(f"  {ready} {flow_name}: {status['progress']} ({status['percentage']:.1f}%)")
+
+        print(f"\n📍 Server starting on http://{host}:{port}")
+        print(f"📖 API Docs: http://{host}:{port}/docs")
+        print(f"🔍 Health Check: http://{host}:{port}/health")
+
+        if reload:
+            print("\n⚠️  Note: For reliable auto-reload, use uvicorn directly:")
+            print(f"   uvicorn api:app --host {host} --port {port} --reload")
+
+        print("="*60)
+        print()
+
+        uvicorn.run(
+            self.app,
+            host=host,
+            port=port,
+            reload=False,
+            log_level=log_level
+        )
+
+
 def create_server(
     project_dir: str = ".",
     **kwargs
@@ -516,16 +951,52 @@ def create_server(
     return FlowServer(project_dir=project_dir, **kwargs)
 
 
+def create_multi_server(
+    flows_dir: str = ".",
+    **kwargs
+) -> MultiFlowServer:
+    """
+    Factory function to create a MultiFlowServer instance.
+
+    Args:
+        flows_dir: Root directory containing flow subdirectories
+        **kwargs: Additional arguments passed to MultiFlowServer constructor
+
+    Returns:
+        Configured MultiFlowServer instance
+    """
+    return MultiFlowServer(flows_dir=flows_dir, **kwargs)
+
+
 if __name__ == '__main__':
     # Example: Run server from command line
     import argparse
 
-    parser = argparse.ArgumentParser(description='FlowLang API Server')
+    parser = argparse.ArgumentParser(
+        description='FlowLang API Server',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Single flow mode
+  python -m flowlang.server ./my_flow_project
+
+  # Multi-flow mode
+  python -m flowlang.server --multi ./flows_directory
+
+  # With custom port
+  python -m flowlang.server --multi ./flows --port 8080
+        """
+    )
     parser.add_argument(
-        'project_dir',
+        'directory',
         nargs='?',
         default='.',
-        help='Project directory containing flow.yaml and tasks.py'
+        help='Project directory (single flow) or flows root directory (multi-flow)'
+    )
+    parser.add_argument(
+        '--multi',
+        action='store_true',
+        help='Enable multi-flow mode (serve multiple flows from subdirectories)'
     )
     parser.add_argument(
         '--host',
@@ -547,8 +1018,16 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     try:
-        server = FlowServer(project_dir=args.project_dir)
-        server.run(host=args.host, port=args.port, reload=args.reload)
+        if args.multi:
+            # Multi-flow mode
+            server = MultiFlowServer(flows_dir=args.directory)
+            server.run(host=args.host, port=args.port, reload=args.reload)
+        else:
+            # Single flow mode
+            server = FlowServer(project_dir=args.directory)
+            server.run(host=args.host, port=args.port, reload=args.reload)
     except Exception as e:
         print(f"❌ Error starting server: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
