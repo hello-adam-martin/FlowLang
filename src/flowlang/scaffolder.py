@@ -1053,17 +1053,18 @@ app = server.app
         # Generate generate.sh script
         generate_sh_content = '''#!/bin/bash
 # Smart generator - automatically detects whether to scaffold or update
-# Usage: ./generate.sh
+# Usage: ./generate.sh (run from tools/ directory)
 
 set -e
+
+# Move to project root (parent of tools/)
+cd "$(dirname "$0")/.."
 
 FLOW_FILE="flow.yaml"
 OUTPUT_DIR="."
 
 # Activate virtual environment if it exists
-if [ -d "../../myenv" ]; then
-    source ../../myenv/bin/activate
-elif [ -d "../myenv" ]; then
+if [ -d "../myenv" ]; then
     source ../myenv/bin/activate
 elif [ -d "myenv" ]; then
     source myenv/bin/activate
@@ -1071,12 +1072,9 @@ fi
 
 # Check if flow.yaml exists
 if [ ! -f "$FLOW_FILE" ]; then
-    echo "❌ Error: flow.yaml not found in current directory"
+    echo "❌ Error: flow.yaml not found in project root"
     exit 1
 fi
-
-# Move to parent directory (project root)
-cd ..
 
 # Check if this is an existing project by looking for flow.py
 if [ -f "flow.py" ]; then
@@ -1098,7 +1096,7 @@ fi
 echo ""
 echo "📝 Next steps:"
 echo "   - Check flow.py for task stubs to implement"
-echo "   - Run: python tools/run_server.py"
+echo "   - Run: ./tools/start_server.sh"
 echo "   - Visit: http://localhost:8000/docs"
 '''
 
