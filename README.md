@@ -201,6 +201,27 @@ python -m flowlang.server --multi flows
 - `/flows/{flow_name}/execute` - Execute specific flow
 - `/health` - Shows aggregate status for all flows
 
+### VS Code Integration
+
+Enhanced development experience with autocompletion, validation, and snippets:
+
+- **Autocompletion**: Type-aware suggestions for all FlowLang constructs
+- **Real-time validation**: Catches errors as you type
+- **Code snippets**: Quick templates (`flow`, `task`, `parallel`, `conditional`, etc.)
+- **Hover docs**: Documentation on hover
+- **Format on save**: Automatic YAML formatting
+
+**Setup** (one-time):
+1. Install [YAML extension by Red Hat](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
+2. Reload VS Code - schema and snippets activate automatically for all `flow.yaml` files
+
+**Quick start:**
+- Type `flow` + Tab → Complete flow template
+- Type `task` + Tab → Task step template
+- Type `${` → Variable suggestions
+
+See [.vscode/README.md](.vscode/README.md) for complete documentation and all available snippets.
+
 ## Project Structure
 
 ```
@@ -437,6 +458,7 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
 - Auto-generated project structure
 - Complete documentation generation
 - Multi-flow support with auto-discovery
+- VS Code integration (autocompletion, validation, snippets)
 
 🚧 **In Progress**:
 - Client SDKs (Python, TypeScript)

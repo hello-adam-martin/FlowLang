@@ -1,0 +1,52 @@
+{
+  "// FlowLang VS Code Configuration": "",
+  "// This file configures YAML validation and autocompletion for flow.yaml files": "",
+
+  "yaml.schemas": {
+    "./flowlang-schema.json": [
+      "**/flow.yaml",
+      "**/flows/**/flow.yaml",
+      "flow.yaml"
+    ]
+  },
+
+  "files.associations": {
+    "**/flow.yaml": "yaml",
+    "**/flows/**/flow.yaml": "yaml"
+  },
+
+  "yaml.validate": true,
+  "yaml.format.enable": true,
+  "yaml.format.singleQuote": false,
+  "yaml.format.proseWrap": "preserve",
+  "yaml.completion": true,
+  "yaml.hover": true,
+
+  "// Editor settings for YAML files": "",
+  "[yaml]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2,
+    "editor.autoIndent": "advanced",
+    "editor.quickSuggestions": {
+      "other": true,
+      "comments": false,
+      "strings": true
+    }
+  },
+
+  "// File exclusions": "",
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/myenv": true,
+    "**/.pytest_cache": true,
+    "**/*.egg-info": true
+  },
+
+  "// Python settings for FlowLang development": "",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.formatting.provider": "black",
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": false,
+  "python.linting.flake8Enabled": true
+}

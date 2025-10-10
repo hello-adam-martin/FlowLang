@@ -28,7 +28,8 @@ ENV/
 .venv
 
 # IDEs
-.vscode/
+# Note: We commit .vscode/ for FlowLang schema and snippets
+# Individual developers can override with their own .vscode/settings.json
 .idea/
 *.swp
 *.swo

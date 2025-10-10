@@ -1,0 +1,265 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://flowlang.dev/schema/flow.json",
+  "title": "FlowLang Flow Definition",
+  "description": "Schema for FlowLang workflow definitions",
+  "type": "object",
+  "required": ["flow", "steps"],
+  "properties": {
+    "flow": {
+      "type": "string",
+      "description": "Name of the flow (PascalCase recommended)",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "examples": ["HelloWorld", "UserAuthentication", "DataProcessor"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of what this flow does"
+    },
+    "inputs": {
+      "type": "array",
+      "description": "Input parameters required by this flow",
+      "items": {
+        "$ref": "#/definitions/input"
+      }
+    },
+    "steps": {
+      "type": "array",
+      "description": "Execution steps that make up this flow",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/step"
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "description": "Output values returned by this flow",
+      "items": {
+        "$ref": "#/definitions/output"
+      }
+    }
+  },
+  "definitions": {
+    "input": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Input parameter name (snake_case recommended)",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["string", "int", "integer", "number", "float", "boolean", "bool", "object", "array", "list"],
+          "description": "Data type of the input parameter"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether this input is required",
+          "default": false
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of this input"
+        },
+        "default": {
+          "description": "Default value if input is not provided"
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "required": ["name", "value"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Output value name",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "value": {
+          "type": "string",
+          "description": "Variable reference to output value (e.g., ${step_id.result})",
+          "pattern": "^\\$\\{.+\\}$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of this output"
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "oneOf": [
+        { "$ref": "#/definitions/taskStep" },
+        { "$ref": "#/definitions/parallelStep" },
+        { "$ref": "#/definitions/conditionalStep" },
+        { "$ref": "#/definitions/loopStep" }
+      ]
+    },
+    "taskStep": {
+      "type": "object",
+      "required": ["task", "id"],
+      "properties": {
+        "task": {
+          "type": "string",
+          "description": "Name of the task to execute (PascalCase recommended)",
+          "pattern": "^[A-Z][A-Za-z0-9]*$"
+        },
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this step (snake_case recommended)",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "if": {
+          "type": "string",
+          "description": "Conditional expression - step only executes if true"
+        },
+        "inputs": {
+          "type": "object",
+          "description": "Input parameters to pass to the task",
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*$": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "object" },
+                { "type": "array" },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "description": "Output keys returned by this task",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
+        },
+        "depends_on": {
+          "type": "array",
+          "description": "Step IDs that must complete before this step runs",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retry": {
+          "$ref": "#/definitions/retryConfig"
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Maximum execution time in seconds",
+          "minimum": 1
+        },
+        "on_error": {
+          "type": "array",
+          "description": "Steps to execute if this step fails",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        }
+      }
+    },
+    "parallelStep": {
+      "type": "object",
+      "required": ["parallel"],
+      "properties": {
+        "parallel": {
+          "type": "array",
+          "description": "Steps to execute concurrently",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        },
+        "id": {
+          "type": "string",
+          "description": "Optional identifier for this parallel block",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      }
+    },
+    "conditionalStep": {
+      "type": "object",
+      "required": ["if", "then"],
+      "properties": {
+        "if": {
+          "type": "string",
+          "description": "Condition to evaluate"
+        },
+        "then": {
+          "type": "array",
+          "description": "Steps to execute if condition is true",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        },
+        "else": {
+          "type": "array",
+          "description": "Steps to execute if condition is false",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        },
+        "id": {
+          "type": "string",
+          "description": "Optional identifier for this conditional block",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      }
+    },
+    "loopStep": {
+      "type": "object",
+      "required": ["for_each", "as", "do"],
+      "properties": {
+        "for_each": {
+          "type": "string",
+          "description": "Variable reference to array to iterate over (e.g., ${inputs.items})"
+        },
+        "as": {
+          "type": "string",
+          "description": "Variable name for current item in loop",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "do": {
+          "type": "array",
+          "description": "Steps to execute for each item",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        },
+        "id": {
+          "type": "string",
+          "description": "Optional identifier for this loop",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      }
+    },
+    "retryConfig": {
+      "type": "object",
+      "properties": {
+        "max_attempts": {
+          "type": "integer",
+          "description": "Maximum number of retry attempts",
+          "minimum": 1,
+          "default": 3
+        },
+        "delay_seconds": {
+          "type": "number",
+          "description": "Delay between retry attempts in seconds",
+          "minimum": 0,
+          "default": 1
+        },
+        "backoff": {
+          "type": "string",
+          "enum": ["fixed", "exponential", "linear"],
+          "description": "Retry backoff strategy",
+          "default": "fixed"
+        }
+      }
+    }
+  }
+}
