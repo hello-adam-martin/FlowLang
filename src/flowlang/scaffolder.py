@@ -169,7 +169,7 @@ class FlowScaffolder:
             '2. Remove the NotImplementedTaskError',
             '3. Add your implementation',
             '4. Update the implementation status in get_implementation_status()',
-            '5. Run tests: pytest test_tasks.py',
+            '5. Run tests: pytest tests/test_tasks.py',
             '"""',
             '',
             'import asyncio',
@@ -550,7 +550,13 @@ class FlowScaffolder:
             '',
             'import pytest',
             'import asyncio',
-            'from tasks import create_task_registry',
+            'import sys',
+            'from pathlib import Path',
+            '',
+            '# Add parent directory to path for flow module import',
+            'sys.path.insert(0, str(Path(__file__).parent.parent))',
+            '',
+            'from flow import create_task_registry',
             'from flowlang.exceptions import NotImplementedTaskError',
             '',
             '',
@@ -592,7 +598,7 @@ class FlowScaffolder:
             '',
             'def test_implementation_progress(registry):',
             '    """Track implementation progress"""',
-            '    from tasks import get_implementation_status',
+            '    from flow import get_implementation_status',
             '    ',
             '    status = get_implementation_status()',
             '    print(f"\\nImplementation progress: {status[\'progress\']} ({status[\'percentage\']:.1f}%)")',
@@ -633,7 +639,13 @@ class FlowScaffolder:
             '',
             'import pytest',
             'import asyncio',
-            'from tasks import create_task_registry',
+            'import sys',
+            'from pathlib import Path',
+            '',
+            '# Add parent directory to path for flow module import',
+            'sys.path.insert(0, str(Path(__file__).parent.parent))',
+            '',
+            'from flow import create_task_registry',
             'from flowlang.exceptions import NotImplementedTaskError',
             '',
             '',
@@ -697,7 +709,7 @@ class FlowScaffolder:
             '',
             'def test_implementation_progress(registry):',
             '    """Track implementation progress"""',
-            '    from tasks import get_implementation_status',
+            '    from flow import get_implementation_status',
             '    ',
             '    status = get_implementation_status()',
             '    print(f"\\nImplementation progress: {status[\'progress\']} ({status[\'percentage\']:.1f}%)")',
@@ -811,9 +823,14 @@ This project contains a flow definition and scaffolded task implementations. All
 ```
 .
 ├── flow.yaml           # Flow definition (your design)
-├── tasks.py            # Task implementations (TODO: implement these)
-├── test_tasks.py       # Unit tests for tasks
-└── README.md           # This file
+├── flow.py             # Task implementations (TODO: implement these)
+├── api.py              # FastAPI app export
+├── README.md           # This file
+├── tools/              # Scripts and utilities
+│   ├── generate.sh     # Smart scaffold/update
+│   └── start_server.sh # Start API server
+└── tests/              # Test files
+    └── test_tasks.py   # Unit tests for tasks
 ```
 
 ## Implementation Status
@@ -828,14 +845,14 @@ This project contains a flow definition and scaffolded task implementations. All
 ### 1. Check Current Status
 
 ```bash
-python tasks.py
+python flow.py
 ```
 
 This shows which tasks are pending implementation.
 
 ### 2. Implement Tasks One by One
 
-Each task in `tasks.py` currently raises `NotImplementedTaskError`. Implement them incrementally:
+Each task in `flow.py` currently raises `NotImplementedTaskError`. Implement them incrementally:
 
 ```python
 @registry.register('TaskName')
@@ -853,7 +870,7 @@ async def task_name(param1, param2):
 
 ### 3. Update Implementation Status
 
-After implementing a task, update `get_implementation_status()` in `tasks.py`:
+After implementing a task, update `get_implementation_status()` in `flow.py`:
 
 ```python
 def get_implementation_status() -> Dict[str, Any]:
@@ -867,10 +884,10 @@ def get_implementation_status() -> Dict[str, Any]:
 
 ```bash
 # Run all tests
-pytest test_tasks.py -v
+pytest tests/test_tasks.py -v
 
 # Run specific test
-pytest test_tasks.py::test_task_name -v
+pytest tests/test_tasks.py::test_task_name -v
 ```
 
 Update tests to verify actual behavior instead of expecting `NotImplementedTaskError`.
@@ -882,7 +899,7 @@ Once all tasks are implemented:
 ```python
 import asyncio
 from flowlang import FlowExecutor
-from tasks import create_task_registry
+from flow import create_task_registry
 
 async def main():
     # Load flow
@@ -929,7 +946,7 @@ if __name__ == '__main__':
 
 1. **Start with simple tasks** - Implement logging, validation tasks first
 2. **Use TDD approach** - Write/update tests as you implement
-3. **Check progress frequently** - Run `python tasks.py` to see status
+3. **Check progress frequently** - Run `python flow.py` to see status
 4. **Test incrementally** - Test each task as you complete it
 5. **Mock external dependencies** - Use mock data initially, integrate real APIs later
 
@@ -964,17 +981,186 @@ Good luck! 🚀
         print(f"✓ Generated README")
         return str(output_path)
 
+    def generate_api(self, filename: str = "api.py") -> str:
+        """
+        Generate FastAPI app export file.
+
+        Args:
+            filename: Name of the output file
+
+        Returns:
+            Path to the generated file
+        """
+        output_path = self.output_dir / filename
+
+        print(f"\n🚀 Generating API file: {output_path}")
+
+        content = f'''"""
+{self.flow_name} API - FastAPI app instance
+
+This module creates the FastAPI app that can be run with uvicorn directly:
+    uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+"""
+
+import sys
+from pathlib import Path
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+
+from flowlang.server import FlowServer
+
+# Create the server and get the FastAPI app
+server = FlowServer(
+    project_dir=".",
+    tasks_file="flow.py",
+    title="{self.flow_name} API",
+    version="1.0.0"
+)
+
+# Export the app for uvicorn
+app = server.app
+'''
+
+        with open(output_path, 'w') as f:
+            f.write(content)
+
+        print(f"✓ Generated API file")
+        return str(output_path)
+
+    def generate_tools(self) -> str:
+        """
+        Generate tools/ directory with utility scripts.
+
+        Returns:
+            Path to the generated directory
+        """
+        tools_dir = self.output_dir / "tools"
+        tools_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"\n🔧 Generating tools directory: {tools_dir}")
+
+        # Generate generate.sh script
+        generate_sh_content = '''#!/bin/bash
+# Smart generator - automatically detects whether to scaffold or update
+# Usage: ./generate.sh
+
+set -e
+
+FLOW_FILE="flow.yaml"
+OUTPUT_DIR="."
+
+# Activate virtual environment if it exists
+if [ -d "../../myenv" ]; then
+    source ../../myenv/bin/activate
+elif [ -d "../myenv" ]; then
+    source ../myenv/bin/activate
+elif [ -d "myenv" ]; then
+    source myenv/bin/activate
+fi
+
+# Check if flow.yaml exists
+if [ ! -f "$FLOW_FILE" ]; then
+    echo "❌ Error: flow.yaml not found in current directory"
+    exit 1
+fi
+
+# Move to parent directory (project root)
+cd ..
+
+# Check if this is an existing project by looking for flow.py
+if [ -f "flow.py" ]; then
+    echo "📦 Existing project detected"
+    echo "🔄 Running UPDATE to preserve your implementations..."
+    echo ""
+    python -m flowlang.scaffolder update "$FLOW_FILE" -o "$OUTPUT_DIR"
+    echo ""
+    echo "✅ Update complete! Your implementations have been preserved."
+else
+    echo "🆕 New project detected"
+    echo "🏗️  Running SCAFFOLD to create initial structure..."
+    echo ""
+    python -m flowlang.scaffolder scaffold "$FLOW_FILE" -o "$OUTPUT_DIR"
+    echo ""
+    echo "✅ Scaffold complete! Start implementing tasks in flow.py"
+fi
+
+echo ""
+echo "📝 Next steps:"
+echo "   - Check flow.py for task stubs to implement"
+echo "   - Run: python tools/run_server.py"
+echo "   - Visit: http://localhost:8000/docs"
+'''
+
+        generate_sh_path = tools_dir / "generate.sh"
+        with open(generate_sh_path, 'w') as f:
+            f.write(generate_sh_content)
+        generate_sh_path.chmod(0o755)  # Make executable
+        print(f"  ✓ Generated generate.sh (executable)")
+
+        # Generate start_server.sh script
+        start_server_sh_content = f'''#!/bin/bash
+# Start {self.flow_name} API Server
+# Usage: ./start_server.sh [--reload]
+
+cd "$(dirname "$0")/.."  # Move to project root
+
+echo "========================================"
+echo "Starting {self.flow_name} API Server..."
+echo "========================================"
+echo ""
+
+# Check if virtual environment exists
+if [ ! -d "../myenv" ]; then
+    echo "❌ Virtual environment not found at ../myenv"
+    echo "Please create it first with: python -m venv myenv"
+    exit 1
+fi
+
+# Activate virtual environment
+source ../myenv/bin/activate
+
+# Check if dependencies are installed
+if ! python -c "import fastapi" 2>/dev/null; then
+    echo "❌ FastAPI not installed. Installing dependencies..."
+    pip install -r ../requirements.txt
+fi
+
+echo "Starting server with uvicorn..."
+echo "📖 API Docs: http://localhost:8000/docs"
+echo "🔍 Health: http://localhost:8000/health"
+echo "Press Ctrl+C to stop"
+echo ""
+
+# Check if --reload flag is passed
+if [ "$1" = "--reload" ]; then
+    echo "🔄 Auto-reload enabled"
+    uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+else
+    uvicorn api:app --host 0.0.0.0 --port 8000
+fi
+'''
+
+        start_server_sh_path = tools_dir / "start_server.sh"
+        with open(start_server_sh_path, 'w') as f:
+            f.write(start_server_sh_content)
+        start_server_sh_path.chmod(0o755)  # Make executable
+        print(f"  ✓ Generated start_server.sh (executable)")
+
+        print(f"✓ Generated tools directory with 2 scripts")
+        return str(tools_dir)
+
     def scaffold(self, flow_yaml: str, output_dir: str = None):
         """
         Initial scaffolding: create new project from flow definition.
-        FAILS if tasks.py already exists (use update() instead).
+        FAILS if flow.py already exists (use update() instead).
 
         Args:
             flow_yaml: YAML string containing flow definition
             output_dir: Directory to output files (uses self.output_dir if None)
 
         Raises:
-            FileExistsError: If tasks.py already exists in output directory
+            FileExistsError: If flow.py already exists in output directory
         """
         if output_dir:
             self.output_dir = Path(output_dir)
@@ -982,15 +1168,15 @@ Good luck! 🚀
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Check if tasks.py already exists
-        tasks_path = self.output_dir / 'tasks.py'
-        if tasks_path.exists() and not self.force:
+        # Check if flow.py already exists
+        flow_py_path = self.output_dir / 'flow.py'
+        if flow_py_path.exists() and not self.force:
             print(f"❌ Error: Project already exists at {self.output_dir}")
-            print(f"   Found existing file: {tasks_path}")
+            print(f"   Found existing file: {flow_py_path}")
             print(f"\n💡 To update an existing project, use:")
             print(f"   python -m flowlang.scaffolder update flow.yaml -o {self.output_dir}")
             print(f"\n⚠️  Or use --force to overwrite (WARNING: destroys all implementations!)")
-            raise FileExistsError(f"Project already exists at {tasks_path}")
+            raise FileExistsError(f"Project already exists at {flow_py_path}")
 
         # Save flow definition
         flow_path = self.output_dir / 'flow.yaml'
@@ -1000,9 +1186,16 @@ Good luck! 🚀
 
         # Analyze and generate (force=False ensures fresh generation)
         self.analyze_flow(flow_yaml)
-        self.generate_task_stubs()
-        self.generate_tests()
+        self.generate_task_stubs(filename="flow.py")
+
+        # Create tests/ subdirectory for tests
+        tests_dir = self.output_dir / "tests"
+        tests_dir.mkdir(parents=True, exist_ok=True)
+        self.generate_tests(filename="tests/test_tasks.py")
+
         self.generate_readme()
+        self.generate_api()
+        self.generate_tools()
 
         print("\n" + "="*60)
         print("🎉 Scaffolding complete!")
@@ -1010,9 +1203,10 @@ Good luck! 🚀
         print(f"📁 Output directory: {self.output_dir.absolute()}")
         print(f"\n📋 Next steps:")
         print(f"  1. cd {self.output_dir}")
-        print(f"  2. python tasks.py          # Check implementation status")
-        print(f"  3. Edit tasks.py            # Implement tasks one by one")
-        print(f"  4. pytest test_tasks.py     # Run tests")
+        print(f"  2. python flow.py              # Check implementation status")
+        print(f"  3. Edit flow.py                # Implement tasks one by one")
+        print(f"  4. pytest tests/test_tasks.py  # Run tests")
+        print(f"  5. ./tools/start_server.sh     # Start the API server")
         print(f"\n💡 To update after changing flow.yaml:")
         print(f"  python -m flowlang.scaffolder update flow.yaml -o {self.output_dir}")
         print("="*60)
@@ -1021,26 +1215,26 @@ Good luck! 🚀
     def update(self, flow_yaml: str, output_dir: str = None):
         """
         Update existing project: smart merge with implemented code.
-        REQUIRES tasks.py to exist (use scaffold() for new projects).
+        REQUIRES flow.py to exist (use scaffold() for new projects).
 
         Args:
             flow_yaml: YAML string containing flow definition
             output_dir: Directory to output files (uses self.output_dir if None)
 
         Raises:
-            FileNotFoundError: If tasks.py doesn't exist in output directory
+            FileNotFoundError: If flow.py doesn't exist in output directory
         """
         if output_dir:
             self.output_dir = Path(output_dir)
 
-        # Check if tasks.py exists
-        tasks_path = self.output_dir / 'tasks.py'
-        if not tasks_path.exists():
+        # Check if flow.py exists
+        flow_py_path = self.output_dir / 'flow.py'
+        if not flow_py_path.exists():
             print(f"❌ Error: No existing project found at {self.output_dir}")
-            print(f"   Missing file: {tasks_path}")
+            print(f"   Missing file: {flow_py_path}")
             print(f"\n💡 To create a new project, use:")
             print(f"   python -m flowlang.scaffolder scaffold flow.yaml -o {self.output_dir}")
-            raise FileNotFoundError(f"No existing project at {tasks_path}")
+            raise FileNotFoundError(f"No existing project at {flow_py_path}")
 
         print(f"🔄 Updating existing project at {self.output_dir}")
         print(f"   Smart merge will preserve your implementations\n")
@@ -1053,9 +1247,16 @@ Good luck! 🚀
 
         # Analyze and update with smart merge
         self.analyze_flow(flow_yaml)
-        self.generate_task_stubs()  # Will use merge logic
-        self.generate_tests()        # Will use merge logic
-        self.generate_readme()       # Always regenerated
+        self.generate_task_stubs(filename="flow.py")  # Will use merge logic
+
+        # Create tests/ subdirectory if needed
+        tests_dir = self.output_dir / "tests"
+        tests_dir.mkdir(parents=True, exist_ok=True)
+        self.generate_tests(filename="tests/test_tasks.py")  # Will use merge logic
+
+        self.generate_readme()  # Always regenerated
+        self.generate_api()     # Always regenerated
+        self.generate_tools()   # Always regenerated
 
         print("\n" + "="*60)
         print("✅ Update complete!")
@@ -1073,9 +1274,10 @@ Good luck! 🚀
 
         print(f"\n📋 Next steps:")
         print(f"  1. Review changes: git diff")
-        print(f"  2. Check status: python tasks.py")
+        print(f"  2. Check status: python flow.py")
         print(f"  3. Implement new tasks if any were added")
-        print(f"  4. Run tests: pytest test_tasks.py")
+        print(f"  4. Run tests: pytest tests/test_tasks.py")
+        print(f"  5. Start server: ./tools/start_server.sh")
         print("="*60)
         print()
 
