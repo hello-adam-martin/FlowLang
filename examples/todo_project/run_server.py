@@ -73,7 +73,11 @@ Examples:
     print("🚀 TodoManager API Server")
     print("="*70)
     print(f"Starting server on http://{args.host}:{args.port}")
-    print(f"Auto-reload: {'enabled' if not args.no_reload else 'disabled'}")
+
+    if not args.no_reload:
+        print("\n💡 For auto-reload during development, use uvicorn directly:")
+        print(f"   uvicorn api:app --host {args.host} --port {args.port} --reload")
+
     print(f"\n📖 Interactive API docs: http://localhost:{args.port}/docs")
     print(f"🔍 Health check:        http://localhost:{args.port}/health")
     print("\n💡 Press Ctrl+C to stop the server")
@@ -87,11 +91,11 @@ Examples:
             version="1.0.0"
         )
 
-        # Run the server
+        # Run the server (reload is always False, use uvicorn for reload)
         server.run(
             host=args.host,
             port=args.port,
-            reload=not args.no_reload,
+            reload=False,
             log_level=args.log_level
         )
     except KeyboardInterrupt:

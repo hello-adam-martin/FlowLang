@@ -326,7 +326,7 @@ class FlowServer:
         Args:
             host: Host to bind to (default: 0.0.0.0)
             port: Port to bind to (default: 8000)
-            reload: Enable auto-reload on code changes
+            reload: Enable auto-reload on code changes (disabled by default, use uvicorn directly for reload)
             log_level: Logging level (debug, info, warning, error)
         """
         print("="*60)
@@ -341,14 +341,21 @@ class FlowServer:
         print(f"\n📍 Server starting on http://{host}:{port}")
         print(f"📖 API Docs: http://{host}:{port}/docs")
         print(f"🔍 Health Check: http://{host}:{port}/health")
+
+        if reload:
+            print("\n⚠️  Note: For reliable auto-reload, use uvicorn directly:")
+            print(f"   uvicorn api:app --host {host} --port {port} --reload")
+
         print("="*60)
         print()
 
+        # Note: reload=True doesn't work properly when passing app object
+        # Users should use uvicorn directly for reload functionality
         uvicorn.run(
             self.app,
             host=host,
             port=port,
-            reload=reload,
+            reload=False,  # Force False - reload doesn't work with app objects
             log_level=log_level
         )
 
