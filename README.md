@@ -183,7 +183,17 @@ flows/
 
 **Start multi-flow server**:
 ```bash
+# Option 1: Using convenience script
+./start_multi_server.sh
+
+# Option 2: Direct Python command
 python -m flowlang.server --multi flows
+
+# With custom port
+./start_multi_server.sh --port 8080
+
+# With auto-reload
+./start_multi_server.sh --reload
 ```
 
 **API endpoints remain the same**:
