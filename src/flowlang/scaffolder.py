@@ -789,12 +789,11 @@ class FlowScaffolder:
             f'    ',
         ])
 
-        # Add input validation - verify sample inputs are defined
+        # Define test input variables
         if sample_inputs:
-            lines.append(f'    # Verify test inputs are defined')
+            lines.append(f'    # Test inputs')
             for key, value in sample_inputs.items():
                 lines.append(f'    {key} = {repr(value)}')
-                lines.append(f'    assert {key} is not None, "Test input {key} should be defined"')
             lines.append(f'    ')
 
         lines.extend([
