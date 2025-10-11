@@ -15,8 +15,11 @@ from .exceptions import (
     FlowExecutionError,
     MaxRetriesExceededError,
     FlowTerminationException,
+    ConnectionError,
 )
 from .cancellation import CancellationToken, CancellationError
+from .connections.manager import ConnectionManager
+from .connections import plugin_registry
 
 
 class FlowExecutor:
@@ -99,8 +102,46 @@ class FlowExecutor:
             'inputs': inputs or {}
         })
 
-        # Create execution context with cancellation token
-        context = FlowContext(inputs, cancellation_token)
+        # Initialize connection manager
+        connection_manager = None
+        if 'connections' in flow_def:
+            connection_manager = ConnectionManager(flow_def['connections'])
+            try:
+                await connection_manager.initialize()
+            except ConnectionError as e:
+                # Emit flow_failed event for connection errors
+                await self._emit_event('flow_failed', {
+                    'flow': flow_name,
+                    'success': False,
+                    'error': str(e),
+                    'error_type': 'ConnectionError',
+                    'duration_ms': (time.time() - self._flow_start_time) * 1000
+                })
+                return {
+                    'success': False,
+                    'error': str(e),
+                    'error_type': 'ConnectionError',
+                }
+
+        # Register built-in tasks from connection plugins
+        if connection_manager:
+            for conn_name in connection_manager.list_connections():
+                plugin = connection_manager.get_plugin(conn_name)
+                if plugin:
+                    builtin_tasks = plugin.get_builtin_tasks()
+                    for task_name, task_func in builtin_tasks.items():
+                        # Register built-in task (allow override if already registered)
+                        self.registry._tasks[task_name] = task_func
+                        self.registry._task_metadata[task_name] = {
+                            'name': task_name,
+                            'description': f'Built-in task from {plugin.name} plugin',
+                            'implemented': True,
+                            'is_builtin': True,
+                            'plugin': plugin.name,
+                        }
+
+        # Create execution context with cancellation token and connections
+        context = FlowContext(inputs, cancellation_token, connection_manager)
 
         try:
             # Validate inputs
@@ -211,6 +252,11 @@ class FlowExecutor:
                 'error_type': type(e).__name__,
             }
 
+        finally:
+            # Clean up connections
+            if connection_manager:
+                await connection_manager.cleanup()
+
     def _validate_flow(self, flow_def: Dict):
         """Validate flow definition structure"""
         if 'flow' not in flow_def:
@@ -320,15 +366,39 @@ class FlowExecutor:
 
         # Execute with retries
         last_error = None
+        connection = None
+        connection_name = None
+
         for attempt in range(max_attempts):
             try:
                 # Get and execute the task
                 task_func = self.registry.get_task(task_name)
 
+                # Check if task needs a connection
+                sig = inspect.signature(task_func)
+                needs_connection = 'connection' in sig.parameters
+
+                # Get connection if needed
+                if needs_connection:
+                    connection_name = step.get('connection')
+                    if not connection_name:
+                        raise FlowExecutionError(
+                            f"Task '{task_name}' requires a connection but none specified. "
+                            f"Add 'connection: connection_name' to the step."
+                        )
+                    connection = await context.get_connection(connection_name)
+                    task_inputs['connection'] = connection
+
+                # Execute task
                 if inspect.iscoroutinefunction(task_func):
                     result = await task_func(**task_inputs)
                 else:
                     result = task_func(**task_inputs)
+
+                # Release connection if acquired
+                if connection and connection_name:
+                    await context.release_connection(connection_name, connection)
+                    connection = None
 
                 # Store output
                 if step.get('id'):
