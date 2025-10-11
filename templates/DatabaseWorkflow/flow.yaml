@@ -1,0 +1,99 @@
+flow: {{FLOW_NAME}}
+description: {{FLOW_DESCRIPTION}}
+
+# Database connections
+connections:
+  {{DB_CONNECTION_NAME}}:
+    type: {{DB_TYPE}}
+{{DB_CONFIG}}
+
+  {{CACHE_CONNECTION_NAME}}:
+    type: redis
+    url: ${env.REDIS_URL}
+    max_connections: 50
+    decode_responses: true
+
+# Flow inputs
+inputs:
+  - name: {{PRIMARY_KEY_NAME}}
+    type: {{PRIMARY_KEY_TYPE}}
+    required: true
+    description: Primary identifier for the operation
+
+# Workflow steps
+steps:
+  # Step 1: Check cache
+  - redis_exists:
+      id: check_cache
+      connection: {{CACHE_CONNECTION_NAME}}
+      keys: ["{{CACHE_KEY_PREFIX}}:${inputs.{{PRIMARY_KEY_NAME}}}"]
+      outputs:
+        - exists
+
+  # Step 2: Get from cache if exists
+  - redis_get:
+      id: get_cached
+      connection: {{CACHE_CONNECTION_NAME}}
+      key: "{{CACHE_KEY_PREFIX}}:${inputs.{{PRIMARY_KEY_NAME}}}"
+      outputs:
+        - value
+      if: ${check_cache.exists}
+
+  # Step 3: Query database if not cached
+  - task: {{FETCH_TASK_NAME}}
+    id: fetch_from_db
+    connection: {{DB_CONNECTION_NAME}}
+    inputs:
+      {{PRIMARY_KEY_NAME}}: ${inputs.{{PRIMARY_KEY_NAME}}}
+    outputs:
+      - data
+    if: "not ${check_cache.exists}"
+
+  # Step 4: Transform/validate data
+  - task: {{TRANSFORM_TASK_NAME}}
+    id: transform
+    inputs:
+      raw_data: ${fetch_from_db.data}
+    outputs:
+      - transformed
+    if: "not ${check_cache.exists}"
+
+  # Step 5: Cache the result
+  - redis_set:
+      id: cache_result
+      connection: {{CACHE_CONNECTION_NAME}}
+      key: "{{CACHE_KEY_PREFIX}}:${inputs.{{PRIMARY_KEY_NAME}}}"
+      value: ${transform.transformed}
+      ex: {{CACHE_TTL_SECONDS}}
+      outputs:
+        - success
+      if: "not ${check_cache.exists}"
+
+  # Step 6: Process the data
+  - task: {{PROCESS_TASK_NAME}}
+    id: process
+    connection: {{DB_CONNECTION_NAME}}
+    inputs:
+      data: ${get_cached.value if check_cache.exists else transform.transformed}
+    outputs:
+      - result
+
+  # Step 7: Update metrics
+  - redis_incr:
+      id: update_metrics
+      connection: {{CACHE_CONNECTION_NAME}}
+      key: "metrics:{{METRIC_NAME}}"
+      amount: 1
+      outputs:
+        - value
+
+# Flow outputs
+outputs:
+  - name: result
+    value: ${process.result}
+
+  - name: from_cache
+    value: ${check_cache.exists}
+
+  - name: total_requests
+    value: ${update_metrics.value}

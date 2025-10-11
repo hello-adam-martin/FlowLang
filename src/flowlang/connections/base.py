@@ -257,13 +257,7 @@ class ConnectionPlugin(ABC):
 
         Example:
             def scaffold_task_helpers(self, output_dir, connection_name="db", **kwargs):
-                code = '''
-"""Helper functions for database operations"""
-
-async def fetch_by_id(table: str, id_value, connection):
-    query = f"SELECT * FROM {table} WHERE id = $1"
-    return await connection.fetchrow(query, id_value)
-'''
+                code = "Helper functions code here"
                 with open(f"{output_dir}/db_helpers.py", "w") as f:
                     f.write(code)
         """

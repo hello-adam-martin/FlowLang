@@ -2,17 +2,18 @@
 FlowLang CLI
 
 Usage:
-    python -m flowlang init [options]               # Create new project
-    python -m flowlang doctor [options]             # Check environment
-    python -m flowlang upgrade [options]            # Upgrade FlowLang
-    python -m flowlang version [options]            # Show version
-    python -m flowlang completions <shell>          # Shell completions
+    python -m flowlang init [options]                  # Create new project
+    python -m flowlang doctor [options]                # Check environment
+    python -m flowlang upgrade [options]               # Upgrade FlowLang
+    python -m flowlang version [options]               # Show version
+    python -m flowlang completions <shell>             # Shell completions
+    python -m flowlang connection <subcommand> [opts]  # Connection plugins
 
-    python -m flowlang validate <flow.yaml>         # Validate flow
-    python -m flowlang watch <flow.yaml> [options]  # Watch mode
-    python -m flowlang template <command> [options] # Templates
-    python -m flowlang scaffolder <command> <args>  # Scaffolder
-    python -m flowlang server <command> <args>      # Server
+    python -m flowlang validate <flow.yaml>            # Validate flow
+    python -m flowlang watch <flow.yaml> [options]     # Watch mode
+    python -m flowlang template <command> [options]    # Templates
+    python -m flowlang scaffolder <command> <args>     # Scaffolder
+    python -m flowlang server <command> <args>         # Server
 """
 
 import sys
@@ -119,6 +120,17 @@ def main():
         help='Shell type'
     )
 
+    # Connection command
+    connection_parser = subparsers.add_parser(
+        'connection',
+        help='Manage connection plugins'
+    )
+    connection_parser.add_argument(
+        'connection_args',
+        nargs=argparse.REMAINDER,
+        help='Connection subcommand and arguments'
+    )
+
     # Development Commands
 
     # Validate command
@@ -221,6 +233,9 @@ def main():
     elif args.command == 'completions':
         from flowlang.cli_completions import cmd_completions
         sys.exit(cmd_completions(args))
+    elif args.command == 'connection':
+        from flowlang.cli_connection import cmd_connection
+        sys.exit(cmd_connection(args))
     elif args.command == 'validate':
         run_validate(args)
     elif args.command == 'watch':
