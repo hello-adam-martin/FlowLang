@@ -93,6 +93,15 @@ For detailed documentation, see:
   - In-memory database support
   - Foreign key enforcement
 
+### Cloud Services
+
+- **Airtable** - aiohttp-based async API client
+  - Built-in tasks: `airtable_list_bases`, `airtable_list_tables`, `airtable_get_table_schema`, `airtable_list`, `airtable_get`, `airtable_create`, `airtable_update`, `airtable_delete`, `airtable_find`, `airtable_batch`
+  - Metadata discovery for bases and tables
+  - Filter by formula support
+  - Sorting and pagination
+  - Batch operations
+
 ---
 
 ## Backlog
