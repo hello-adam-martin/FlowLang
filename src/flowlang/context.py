@@ -6,18 +6,20 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .cancellation import CancellationToken
+    from .connections.manager import ConnectionManager
 
 
 class FlowContext:
     """
     Manages the execution context for a flow, including inputs,
-    step outputs, and variable resolution.
+    step outputs, variable resolution, and connections.
     """
 
     def __init__(
         self,
         inputs: Optional[Dict[str, Any]] = None,
-        cancellation_token: Optional["CancellationToken"] = None
+        cancellation_token: Optional["CancellationToken"] = None,
+        connection_manager: Optional["ConnectionManager"] = None
     ):
         """
         Initialize flow context with inputs.
@@ -25,11 +27,13 @@ class FlowContext:
         Args:
             inputs: Dictionary of input variables for the flow
             cancellation_token: Optional token for cancellation support
+            connection_manager: Optional connection manager for database/API connections
         """
         self.inputs = inputs or {}
         self.outputs = {}  # Maps step_id -> output data
         self.metadata = {}  # Additional context metadata
         self.cancellation_token = cancellation_token  # Cancellation token
+        self.connection_manager = connection_manager  # Connection manager
 
     def set_step_output(self, step_id: str, output: Any):
         """Store the output from a step"""
@@ -160,5 +164,46 @@ class FlowContext:
         if self.cancellation_token:
             self.cancellation_token.add_cleanup_handler(handler)
 
+    async def get_connection(self, name: str) -> Any:
+        """
+        Get a connection by name.
+
+        This is called by tasks that need a connection.
+
+        Args:
+            name: Connection name from flow YAML
+
+        Returns:
+            Connection object (type depends on plugin)
+
+        Raises:
+            ConnectionError: If connection manager not available
+            ConnectionNotFoundError: If connection name not found
+        """
+        if self.connection_manager is None:
+            from .exceptions import ConnectionError
+            raise ConnectionError(
+                "No connection manager available. "
+                "Connections must be defined in flow YAML."
+            )
+
+        return await self.connection_manager.get_connection(name)
+
+    async def release_connection(self, name: str, connection: Any):
+        """
+        Release a connection back to the pool.
+
+        Args:
+            name: Connection name
+            connection: The connection to release
+        """
+        if self.connection_manager:
+            await self.connection_manager.release_connection(name, connection)
+
+    def has_connections(self) -> bool:
+        """Check if connection manager is available"""
+        return self.connection_manager is not None
+
     def __repr__(self):
-        return f"FlowContext(inputs={self.inputs}, outputs={list(self.outputs.keys())})"
+        conn_info = f", connections={self.connection_manager.list_connections()}" if self.connection_manager else ""
+        return f"FlowContext(inputs={self.inputs}, outputs={list(self.outputs.keys())}{conn_info})"

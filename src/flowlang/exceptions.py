@@ -66,3 +66,43 @@ class FlowTerminationException(FlowLangError):
         self.reason = reason or "Flow terminated by exit step"
         self.outputs = outputs or {}
         super().__init__(self.reason)
+
+
+# Connection-related exceptions
+
+class ConnectionError(FlowLangError):
+    """Base exception for connection-related errors"""
+    pass
+
+
+class ConnectionNotFoundError(ConnectionError):
+    """Raised when a connection name is not found"""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class ConnectionConfigError(ConnectionError):
+    """Raised when connection configuration is invalid"""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class ConnectionTimeoutError(ConnectionError):
+    """Raised when connection times out"""
+    def __init__(self, connection_name: str, timeout: int):
+        self.connection_name = connection_name
+        self.timeout = timeout
+        super().__init__(
+            f"Connection '{connection_name}' timed out after {timeout} seconds"
+        )
+
+
+class PluginNotFoundError(FlowLangError):
+    """Raised when a connection plugin is not found"""
+    def __init__(self, plugin_name: str, available: list = None):
+        self.plugin_name = plugin_name
+        self.available = available or []
+        message = f"Connection plugin '{plugin_name}' not found"
+        if available:
+            message += f". Available plugins: {', '.join(available)}"
+        super().__init__(message)
