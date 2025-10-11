@@ -47,7 +47,15 @@ FlowLang/
 │   ├── server.py          # FlowServer - REST API server
 │   ├── scaffolder.py      # FlowScaffolder - code generation
 │   ├── scaffolder_merge.py # Smart merge for preserving implementations
+│   ├── templates.py       # TemplateManager - template system
+│   ├── hot_reload.py      # Hot reload - file watching and live reload
+│   ├── watch.py           # Watch mode - live testing CLI
 │   └── exceptions.py      # Custom exceptions
+├── templates/             # Pre-built flow templates
+│   └── APIIntegration/    # REST API integration template
+│       ├── flow.yaml      # Template flow with {{VARIABLES}}
+│       ├── flow.py        # Template tasks with {{VARIABLES}}
+│       └── README.md      # Template documentation
 ├── flows/                 # Flow project directories
 │   └── todo_project/      # Example TodoManager flow project
 │       ├── flow.yaml      # Flow definition
@@ -107,13 +115,30 @@ FlowLang/
    - Supports scaffold (new project) and update (existing project) modes
    - Tracks implementation progress automatically
 
-6. **Exceptions** (src/flowlang/exceptions.py)
+6. **Hot Reload** (src/flowlang/hot_reload.py)
+   - FileWatcher: Monitors flow.py and flow.yaml for changes
+   - ReloadManager: Manages selective reload without server restart
+   - Debouncing: 0.5 second delay to avoid duplicate events
+   - Rollback: Keeps previous working version in case of errors
+   - State Preservation: Server stays running during reload
+   - Module reloading: Uses `importlib.reload()` for Python modules
+
+7. **Watch Mode** (src/flowlang/watch.py)
+   - Live testing CLI command: `python -m flowlang watch`
+   - Auto-executes flow on file changes
+   - Test input loading from JSON file
+   - Color-coded terminal output (success/error)
+   - Performance metrics and diff comparison
+   - Continuous monitoring for development workflow
+
+8. **Exceptions** (src/flowlang/exceptions.py)
    - `FlowLangError` - Base exception
    - `TaskNotFoundError` - Task not registered
    - `NotImplementedTaskError` - Task is a stub
    - `FlowExecutionError` - Runtime execution errors
    - `FlowValidationError` - Invalid flow definitions
    - `FlowTerminationException` - Intentional flow termination via exit step (control flow, not an error)
+   - `ReloadError` - Hot reload failure
 
 ### Flow Definition Format
 
@@ -269,6 +294,97 @@ curl -X POST http://localhost:8000/flows/MyFlow/execute \
 
 Access interactive API docs at http://localhost:8000/docs
 
+#### Multi-Flow Server
+
+Start a server that serves multiple flows:
+
+```bash
+# From project root - serves all flows in flows/ directory
+./scripts/start_multi_server.sh
+
+# With hot reload enabled
+./scripts/start_multi_server.sh --reload
+
+# With custom port
+./scripts/start_multi_server.sh --port 8080 --reload
+
+# Or use Python directly
+python -m flowlang.server --multi flows --reload
+```
+
+Multi-flow server features:
+- Automatically discovers all flow projects in subdirectories
+- Each flow gets its own executor and task registry
+- Hot reload watches all flows simultaneously
+- Aggregate health endpoint shows status of all flows
+- Per-flow endpoints: `/flows/{flow_name}/execute`
+
+### Using Hot Reload
+
+#### Option 1: Server with Hot Reload
+
+Start the FlowLang API server with hot reload enabled for rapid development:
+
+```python
+from flowlang.server import FlowServer
+
+# Create server with hot reload
+server = FlowServer(
+    project_dir='./my_project',
+    enable_hot_reload=True  # Enable hot reload
+)
+
+server.run(host='0.0.0.0', port=8000)
+```
+
+Or use the generated api.py (hot reload enabled by default):
+
+```bash
+cd flows/my_project
+uvicorn api:app --host 0.0.0.0 --port 8000
+```
+
+When hot reload is enabled:
+- Changes to `flow.py` automatically reload task implementations
+- Changes to `flow.yaml` automatically reload flow definitions
+- No server restart required
+- Failed reloads automatically rollback to previous working version
+- Server logs show reload status and errors
+
+#### Option 2: Watch Mode for Live Testing
+
+Use watch mode for interactive development with instant feedback:
+
+```bash
+# From a flow project directory
+cd flows/my_project
+
+# Watch with default settings
+python -m flowlang watch
+
+# Watch with custom files
+python -m flowlang watch flow.yaml --tasks-file flow.py
+
+# Watch with test inputs from JSON
+python -m flowlang watch --test-inputs test_inputs.json
+```
+
+Watch mode features:
+- Auto-executes flow when flow.yaml or flow.py changes
+- Shows execution results in terminal with color-coded output
+- Displays performance metrics (execution time)
+- Compares outputs between runs (shows if changed)
+- Loads test inputs from JSON file
+- Perfect for TDD-style development
+
+Example test_inputs.json:
+```json
+{
+  "user_id": "123",
+  "action": "create"
+}
+```
+
 ### Checking Implementation Progress
 
 ```python
@@ -304,6 +420,54 @@ print(f"Unimplemented: {status['unimplemented_tasks']}")
    - `tools/start_server.sh`: Convenient server launcher
    - `tools/generate.sh`: Smart scaffold/update wrapper
    - Both scripts handle virtual environment activation
+
+4. **Hot Reload** ✅: Live development without server restarts
+   - See `src/flowlang/hot_reload.py`
+   - Watches flow.py and flow.yaml for changes
+   - Selective reload of tasks and flow definitions
+   - Automatic rollback on errors
+   - Debounced file watching (0.5s delay)
+   - Enabled by default in generated api.py files
+   - Performance metrics and reload statistics
+   - **Works in both single-flow and multi-flow modes**
+   - Multi-flow: Each flow gets its own ReloadManager and FileWatcher
+
+5. **Watch Mode** ✅: Interactive live testing CLI
+   - See `src/flowlang/watch.py`
+   - Command: `python -m flowlang watch [flow.yaml] [options]`
+   - Auto-executes flow on file changes
+   - Test input loading from JSON file
+   - Color-coded terminal output
+   - Performance metrics and output diff comparison
+   - Perfect for TDD workflow
+
+6. **Flow Templates** ✅: Pre-built production-ready flow templates
+   - See `src/flowlang/templates.py` and `scripts/create_flow_from_template.sh`
+   - Commands:
+     - `python -m flowlang template list` - List available templates
+     - `python -m flowlang template vars <name>` - Show required variables
+     - `python -m flowlang template create <name> <output> --var KEY=value` - Create from template
+   - **Interactive Script** (Recommended):
+     - `./scripts/create_flow_from_template.sh` - Interactive mode (default)
+     - Prompts for template name, flow name, and all template variables
+     - Provides sensible defaults for all variables
+     - Automatically runs scaffolder to generate complete project
+     - Preserves template implementations via smart merge
+     - Results in 100% implemented, production-ready flow
+   - Variable substitution system (`{{VAR_NAME}}` placeholders)
+   - Processes all files recursively (YAML, Python, Markdown, etc.)
+   - Smart handling of binary files (copied as-is)
+   - Template structure:
+     - `templates/TemplateName/flow.yaml` - Flow definition with variables
+     - `templates/TemplateName/flow.py` - Task implementations with variables (scaffolder-compatible format)
+     - `templates/TemplateName/README.md` - Documentation
+   - Built-in templates:
+     - **APIIntegration**: REST API client with auth, retry logic, error handling (10 tasks, 100% implemented)
+       - Variables: FLOW_NAME, FLOW_DESCRIPTION, API_BASE_URL, API_KEY_ENV_VAR, AUTH_HEADER_NAME, AUTH_HEADER_PREFIX
+       - Features: validation, auth, retry with exponential backoff, smart error handling
+       - Template uses `create_task_registry()` format compatible with scaffolder
+   - Extensible: Add new templates by creating template directory with `{{VARIABLE}}` placeholders
+   - Template tasks must use scaffolder-compatible format (decorators inside `create_task_registry()` function)
 
 ## Planned Features (Not Yet Implemented)
 

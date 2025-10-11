@@ -1,0 +1,174 @@
+flow: {{FLOW_NAME}}
+description: {{FLOW_DESCRIPTION}}
+
+inputs:
+  - name: endpoint
+    type: string
+    required: true
+    description: "API endpoint path (e.g., /users/123)"
+
+  - name: method
+    type: string
+    required: false
+    default: "GET"
+    description: "HTTP method (GET, POST, PUT, DELETE)"
+
+  - name: params
+    type: object
+    required: false
+    default: {}
+    description: "Query parameters"
+
+  - name: body
+    type: object
+    required: false
+    default: {}
+    description: "Request body (for POST/PUT)"
+
+  - name: headers
+    type: object
+    required: false
+    default: {}
+    description: "Additional request headers"
+
+steps:
+  # Step 1: Validate inputs
+  - task: ValidateInputs
+    id: validate
+    inputs:
+      endpoint: ${inputs.endpoint}
+      method: ${inputs.method}
+    outputs:
+      - is_valid
+      - error_message
+    description: "Validate API request parameters"
+
+  # Early termination if validation fails
+  - if: ${validate.is_valid} == false
+    then:
+      - task: RaiseValidationError
+        id: raise_validation_error
+        inputs:
+          error: ${validate.error_message}
+
+  # Step 2: Get authentication credentials
+  - task: GetAuthCredentials
+    id: auth
+    outputs:
+      - api_key
+      - auth_header
+    description: "Retrieve API authentication credentials"
+    retry:
+      max_attempts: 2
+      delay_seconds: 1
+
+  # Step 3: Build the complete request
+  - task: BuildRequest
+    id: request
+    inputs:
+      base_url: "{{API_BASE_URL}}"
+      endpoint: ${inputs.endpoint}
+      method: ${inputs.method}
+      params: ${inputs.params}
+      body: ${inputs.body}
+      headers: ${inputs.headers}
+      auth_header: ${auth.auth_header}
+    outputs:
+      - full_url
+      - final_headers
+      - final_body
+    description: "Construct complete API request"
+
+  # Step 4: Call the API with retry logic
+  - task: CallAPI
+    id: api_call
+    inputs:
+      url: ${request.full_url}
+      method: ${inputs.method}
+      headers: ${request.final_headers}
+      body: ${request.final_body}
+      timeout: 30
+    outputs:
+      - status_code
+      - response_body
+      - response_headers
+      - success
+      - error
+    description: "Execute API request with timeout"
+    retry:
+      max_attempts: 3
+      delay_seconds: 2
+      backoff_multiplier: 2.0
+    on_error:
+      - task: LogAPIError
+        id: log_error
+        inputs:
+          url: ${request.full_url}
+          method: ${inputs.method}
+          error: ${api_call.error}
+
+  # Step 5: Check response status
+  - if: ${api_call.success} == false
+    then:
+      - task: HandleAPIError
+        id: error_handler
+        inputs:
+          status_code: ${api_call.status_code}
+          error: ${api_call.error}
+          response: ${api_call.response_body}
+        outputs:
+          - should_retry
+          - error_message
+
+      # Raise error if not retryable
+      - if: ${error_handler.should_retry} == false
+        then:
+          - task: RaiseAPIError
+            id: raise_api_error
+            inputs:
+              message: ${error_handler.error_message}
+
+  # Step 6: Parse and validate response
+  - task: ParseResponse
+    id: parse
+    inputs:
+      response_body: ${api_call.response_body}
+      response_headers: ${api_call.response_headers}
+      status_code: ${api_call.status_code}
+    outputs:
+      - data
+      - metadata
+    description: "Parse API response and extract data"
+
+  # Step 7: Transform response data
+  - task: TransformResponse
+    id: transform
+    inputs:
+      data: ${parse.data}
+      metadata: ${parse.metadata}
+    outputs:
+      - result
+    description: "Transform response to desired output format"
+
+  # Step 8: Log successful API call
+  - task: LogAPISuccess
+    id: log
+    inputs:
+      url: ${request.full_url}
+      method: ${inputs.method}
+      status_code: ${api_call.status_code}
+      duration: ${api_call.duration}
+    description: "Log successful API interaction"
+
+outputs:
+  - name: data
+    value: ${transform.result}
+    description: "Transformed API response data"
+
+  - name: status_code
+    value: ${api_call.status_code}
+    description: "HTTP status code"
+
+  - name: metadata
+    value: ${parse.metadata}
+    description: "Response metadata (headers, timing, etc.)"

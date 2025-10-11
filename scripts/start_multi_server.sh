@@ -4,9 +4,19 @@
 
 set -e
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Get the FlowLang root directory (parent of scripts/)
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Change to project root
+cd "$PROJECT_ROOT"
+
 echo "========================================"
 echo "FlowLang Multi-Flow API Server"
 echo "========================================"
+echo ""
+echo "📂 Project root: $PROJECT_ROOT"
 echo ""
 
 # Activate virtual environment if it exists
@@ -14,7 +24,7 @@ if [ -d "myenv" ]; then
     echo "🐍 Activating virtual environment..."
     source myenv/bin/activate
 else
-    echo "⚠️  No virtual environment found at ./myenv"
+    echo "⚠️  No virtual environment found at $PROJECT_ROOT/myenv"
     echo "   Continuing without virtual environment..."
 fi
 
@@ -45,7 +55,7 @@ fi
 
 echo ""
 echo "Starting multi-flow server..."
-echo "📁 Flows directory: $(pwd)/flows"
+echo "📁 Flows directory: $PROJECT_ROOT/flows"
 echo ""
 
 # Parse command line arguments

@@ -131,6 +131,8 @@ cd my_project
 ./tools/start_server.sh
 ```
 
+**Hot Reload is enabled by default!** Edit `flow.py` or `flow.yaml` and your changes will reload automatically without restarting the server.
+
 5. **Test your flow**:
 
 ```bash
@@ -142,6 +144,85 @@ curl -X POST http://localhost:8000/flows/HelloWorld/execute \
 Visit http://localhost:8000/docs for interactive API documentation.
 
 ## Core Features
+
+### Flow Templates
+
+Jumpstart your workflow development with pre-built, production-ready templates:
+
+**Available Templates**:
+
+1. **API Integration Template** - Production-ready REST API client with:
+   - Input validation and early termination
+   - Authentication handling (API keys, Bearer tokens, OAuth)
+   - Smart retry logic with exponential backoff
+   - Comprehensive error handling (retryable vs non-retryable)
+   - Response parsing and transformation
+   - Logging for monitoring and debugging
+   - Timeout support
+   - **100% implemented** - ready to customize and deploy
+
+**Create from template (Interactive - Recommended)**:
+```bash
+# Interactive mode with smart defaults
+./scripts/create_flow_from_template.sh
+
+# You'll be prompted for:
+# - Template name (default: APIIntegration)
+# - Flow name (e.g., GitHubAPI)
+# - Template variables with sensible defaults
+```
+
+**Create from template (Direct)**:
+```bash
+# List available templates
+python -m flowlang template list
+
+# Create a GitHub API integration
+python -m flowlang template create APIIntegration flows/GitHubAPI \
+  --var FLOW_NAME=GitHubAPI \
+  --var "FLOW_DESCRIPTION=Integrate with GitHub REST API" \
+  --var API_BASE_URL=https://api.github.com \
+  --var API_KEY_ENV_VAR=GITHUB_TOKEN \
+  --var AUTH_HEADER_NAME=Authorization \
+  --var "AUTH_HEADER_PREFIX=Bearer "
+
+# Then generate complete project structure
+python -m flowlang scaffolder update flows/GitHubAPI/flow.yaml -o flows/GitHubAPI
+```
+
+**Check required variables for a template**:
+```bash
+python -m flowlang template vars APIIntegration
+```
+
+**After creating from template**:
+```bash
+cd flows/GitHubAPI
+python flow.py                     # Check status (shows 10/10 implemented!)
+./tools/start_server.sh --reload   # Start API server
+
+# Test it
+curl -X POST http://localhost:8000/flows/GitHubAPI/execute \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"endpoint": "/repos/octocat/Hello-World", "method": "GET"}}'
+```
+
+**What you get**:
+- Complete flow.yaml with best practices and your custom variables
+- **Fully implemented tasks** (10/10 - 100% ready!)
+- FastAPI server (api.py)
+- Comprehensive README with examples
+- Unit tests (tests/test_tasks.py)
+- Helper scripts (tools/start_server.sh)
+- Complete project structure
+
+The interactive script (`./scripts/create_flow_from_template.sh`) automatically:
+1. Creates flow from template with your variables
+2. Runs scaffolder to generate complete project structure
+3. Preserves all template implementations (smart merge)
+4. Results in a **production-ready** flow project
+
+See `templates/APIIntegration/README.md` for detailed documentation on the API Integration template, including customization examples and common patterns.
 
 ### Flow Constructs
 
@@ -194,6 +275,7 @@ Every flow gets a production-ready REST API:
 - **OpenAPI/Swagger docs**: Interactive API documentation
 - **Type validation**: Pydantic models from flow definition
 - **Error handling**: Proper HTTP status codes and error messages
+- **Hot reload**: Changes reload automatically without server restart (enabled by default)
 
 ### Multi-Flow Support
 
@@ -329,7 +411,13 @@ FlowLang/
 │   ├── context.py          # Execution context
 │   ├── server.py           # REST API server
 │   ├── scaffolder.py       # Code generator
+│   ├── templates.py        # Template management system
 │   └── exceptions.py       # Custom exceptions
+├── templates/              # Pre-built flow templates
+│   └── APIIntegration/     # REST API integration template
+│       ├── flow.yaml       # Template flow definition
+│       ├── flow.py         # Template task implementations
+│       └── README.md       # Template documentation
 ├── flows/                  # Flow definitions and examples
 │   ├── hello_world.yaml        # Source YAML template
 │   ├── HelloWorld/             # Working example project
@@ -600,6 +688,50 @@ curl http://localhost:8000/flows/HelloWorld/tasks
 Returns implementation progress and task list.
 
 ## Advanced Features
+
+### Hot Reload & Live Development
+
+FlowLang includes powerful hot reload capabilities for rapid development:
+
+**Server Hot Reload** (enabled by default in generated `api.py`):
+- Automatically reloads `flow.py` when task implementations change
+- Automatically reloads `flow.yaml` when flow definitions change
+- No server restart required
+- Preserves server state and connections
+- Rolls back to previous version on errors
+- Works in both single-flow and multi-flow modes
+
+```bash
+# Single flow - hot reload enabled by default
+cd flows/HelloWorld
+uvicorn api:app --host 0.0.0.0 --port 8000
+
+# Multi-flow with hot reload
+./scripts/start_multi_server.sh --reload
+```
+
+**Watch Mode** for interactive development:
+```bash
+# From a flow project directory
+cd flows/HelloWorld
+python -m flowlang watch --test-inputs test_inputs.json
+```
+
+Watch mode features:
+- Auto-executes flow when files change
+- Color-coded terminal output (green=success, red=error)
+- Performance metrics (execution time)
+- Output diff comparison between runs
+- Perfect for TDD-style development
+
+Create `test_inputs.json`:
+```json
+{
+  "user_name": "TestUser"
+}
+```
+
+Then edit `flow.py` or `flow.yaml` and see results instantly!
 
 ### Variable Resolution
 
@@ -873,6 +1005,10 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
 - Task registry with progress tracking
 - Smart scaffolder with merge capabilities and PascalCase naming
 - REST API server with FastAPI (single and multi-flow modes)
+- **Hot reload for rapid development** (file watching, selective reload, rollback on errors)
+- **Watch mode for live testing** (auto-execution, color-coded output, performance metrics)
+- **Flow templates system** (pre-built production-ready templates with variable substitution)
+  - API Integration template (REST API client with auth, retry, error handling)
 - Auto-generated project structure
 - Complete documentation generation
 - Multi-flow support with auto-discovery
@@ -880,11 +1016,13 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
 - Flow visualization (Mermaid diagrams, CLI, API)
 
 🚧 **In Progress**:
+- Additional templates (ETL Pipeline, Approval Workflow, Notification Flow)
 - Client SDKs (Python, TypeScript)
 - Advanced error handling patterns
 - Flow composition and subflows
 
 🎯 **Planned**:
+- Template gallery with community templates
 - Web UI for flow design
 - Monitoring and observability
 - Event-driven triggers

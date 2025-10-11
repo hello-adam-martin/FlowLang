@@ -23,6 +23,7 @@ import json
 
 from .executor import FlowExecutor
 from .exceptions import FlowLangError, NotImplementedTaskError
+from .hot_reload import FileWatcher, ReloadManager
 
 
 class FlowExecuteRequest(BaseModel):
@@ -80,7 +81,8 @@ class FlowServer:
         flow_file: str = "flow.yaml",
         tasks_file: str = "tasks.py",
         title: str = "FlowLang API",
-        version: str = "1.0.0"
+        version: str = "1.0.0",
+        enable_hot_reload: bool = False
     ):
         """
         Initialize the FlowLang server.
@@ -91,10 +93,12 @@ class FlowServer:
             tasks_file: Name of the tasks Python file
             title: API title for OpenAPI docs
             version: API version
+            enable_hot_reload: Enable hot reload for development (watches files for changes)
         """
         self.project_dir = Path(project_dir).absolute()
         self.flow_file = flow_file
         self.tasks_file = tasks_file
+        self.enable_hot_reload = enable_hot_reload
 
         # Load flow definition
         self.flow_yaml, self.flow_def = self._load_flow()
@@ -118,6 +122,12 @@ class FlowServer:
 
         # Register routes
         self._register_routes()
+
+        # Initialize hot reload if enabled
+        self.reload_manager = None
+        self.file_watcher = None
+        if self.enable_hot_reload:
+            self._setup_hot_reload()
 
     def _load_flow(self) -> tuple[str, Dict]:
         """Load flow YAML definition"""
@@ -160,6 +170,49 @@ class FlowServer:
         registry = tasks_module.create_task_registry()
 
         return registry
+
+    def _setup_hot_reload(self):
+        """Setup hot reload functionality"""
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+
+        logger.info("🔥 Hot reload enabled")
+        logger.info(f"   Watching: {self.tasks_file}, {self.flow_file}")
+
+        # Create reload manager
+        self.reload_manager = ReloadManager(
+            project_dir=str(self.project_dir),
+            tasks_file=self.tasks_file
+        )
+
+        # Create file watcher
+        self.file_watcher = FileWatcher(debounce_seconds=0.5)
+
+        # Register file watch callbacks
+        tasks_path = self.project_dir / self.tasks_file
+        flow_path = self.project_dir / self.flow_file
+
+        def on_tasks_change(file_path):
+            """Callback when flow.py changes"""
+            success = self.reload_manager.reload_tasks(self.registry)
+            if success:
+                logger.info("   ✨ Tasks are now updated - try the API again!")
+
+        def on_flow_change(file_path):
+            """Callback when flow.yaml changes"""
+            new_yaml = self.reload_manager.reload_flow_yaml()
+            if new_yaml:
+                # Update flow definition
+                self.flow_yaml = new_yaml
+                self.flow_def = yaml.safe_load(new_yaml)
+                logger.info("   ✨ Flow definition updated - API schema may have changed!")
+
+        self.file_watcher.watch_file(str(tasks_path), on_tasks_change)
+        self.file_watcher.watch_file(str(flow_path), on_flow_change)
+
+        # Start watching
+        self.file_watcher.start(str(self.project_dir))
 
     def _create_request_model(self) -> type[BaseModel]:
         """
@@ -667,6 +720,11 @@ class FlowServer:
         status = self.registry.get_implementation_status()
         print(f"Tasks: {status['progress']} ({status['percentage']:.1f}%)")
 
+        if self.enable_hot_reload:
+            print(f"\n🔥 Hot reload: ENABLED")
+            print(f"   Watching: {self.tasks_file}, {self.flow_file}")
+            print(f"   Changes will reload automatically!")
+
         print(f"\n📍 Server starting on http://{host}:{port}")
         print(f"📖 API Docs: http://{host}:{port}/docs")
         print(f"🔍 Health Check: http://{host}:{port}/health")
@@ -710,7 +768,8 @@ class MultiFlowServer:
         self,
         flows_dir: str = ".",
         title: str = "FlowLang Multi-Flow API",
-        version: str = "1.0.0"
+        version: str = "1.0.0",
+        enable_hot_reload: bool = False
     ):
         """
         Initialize the multi-flow server.
@@ -719,9 +778,11 @@ class MultiFlowServer:
             flows_dir: Root directory containing flow subdirectories
             title: API title for OpenAPI docs
             version: API version
+            enable_hot_reload: Enable hot reload for development (watches all flow files for changes)
         """
         self.flows_dir = Path(flows_dir).absolute()
-        self.flows = {}  # {flow_name: {'executor': ..., 'registry': ..., 'flow_def': ..., 'flow_yaml': ...}}
+        self.flows = {}  # {flow_name: {'executor': ..., 'registry': ..., 'flow_def': ..., 'flow_yaml': ..., 'reload_manager': ..., 'file_watcher': ...}}
+        self.enable_hot_reload = enable_hot_reload
 
         # Discover and load all flows
         self._discover_flows()
@@ -735,6 +796,10 @@ class MultiFlowServer:
 
         # Register routes
         self._register_routes()
+
+        # Setup hot reload for all flows if enabled
+        if self.enable_hot_reload:
+            self._setup_hot_reload()
 
     def _discover_flows(self):
         """Discover and load all flow projects in subdirectories"""
@@ -803,6 +868,73 @@ class MultiFlowServer:
 
         print("="*60)
         print(f"✅ Loaded {len(self.flows)} flows successfully\n")
+
+    def _setup_hot_reload(self):
+        """Setup hot reload for all flows"""
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+
+        logger.info("🔥 Hot reload enabled for multi-flow server")
+        logger.info(f"   Watching {len(self.flows)} flows")
+
+        # Setup hot reload for each flow
+        for flow_name, flow_data in self.flows.items():
+            project_dir = flow_data['project_dir']
+            registry = flow_data['registry']
+
+            # Create reload manager for this flow
+            reload_manager = ReloadManager(
+                project_dir=str(project_dir),
+                tasks_file="flow.py"
+            )
+
+            # Create file watcher for this flow
+            file_watcher = FileWatcher(debounce_seconds=0.5)
+
+            # Register file watch callbacks
+            tasks_path = project_dir / "flow.py"
+            flow_yaml_path = project_dir / "flow.yaml"
+
+            def create_tasks_callback(flow_name, registry, reload_mgr):
+                """Create a callback closure for this specific flow"""
+                def on_tasks_change(file_path):
+                    logger.info(f"📝 [{flow_name}] flow.py changed")
+                    success = reload_mgr.reload_tasks(registry)
+                    if success:
+                        logger.info(f"   ✨ [{flow_name}] Tasks reloaded successfully")
+                return on_tasks_change
+
+            def create_flow_callback(flow_name, flow_data, reload_mgr):
+                """Create a callback closure for this specific flow"""
+                def on_flow_change(file_path):
+                    logger.info(f"📝 [{flow_name}] flow.yaml changed")
+                    new_yaml = reload_mgr.reload_flow_yaml()
+                    if new_yaml:
+                        # Update flow definition in the flows dict
+                        flow_data['flow_yaml'] = new_yaml
+                        flow_data['flow_def'] = yaml.safe_load(new_yaml)
+                        logger.info(f"   ✨ [{flow_name}] Flow definition reloaded")
+                return on_flow_change
+
+            # Register callbacks with closures to capture flow-specific data
+            file_watcher.watch_file(
+                str(tasks_path),
+                create_tasks_callback(flow_name, registry, reload_manager)
+            )
+            file_watcher.watch_file(
+                str(flow_yaml_path),
+                create_flow_callback(flow_name, flow_data, reload_manager)
+            )
+
+            # Start watching this flow's directory
+            file_watcher.start(str(project_dir))
+
+            # Store reload components in flow data
+            flow_data['reload_manager'] = reload_manager
+            flow_data['file_watcher'] = file_watcher
+
+            logger.info(f"   👁️  Watching: {flow_name} (flow.py, flow.yaml)")
 
     def _register_routes(self):
         """Register FastAPI routes for all flows"""
@@ -1307,6 +1439,11 @@ class MultiFlowServer:
             ready = "✅" if status['unimplemented_count'] == 0 else "⚠️"
             print(f"  {ready} {flow_name}: {status['progress']} ({status['percentage']:.1f}%)")
 
+        if self.enable_hot_reload:
+            print(f"\n🔥 Hot reload: ENABLED")
+            print(f"   Watching {len(self.flows)} flows for changes")
+            print(f"   Changes to flow.py or flow.yaml will reload automatically!")
+
         print(f"\n📍 Server starting on http://{host}:{port}")
         print(f"📖 API Docs: http://{host}:{port}/docs")
         print(f"🔍 Health Check: http://{host}:{port}/health")
@@ -1413,11 +1550,11 @@ Examples:
     try:
         if args.multi:
             # Multi-flow mode
-            server = MultiFlowServer(flows_dir=args.directory)
+            server = MultiFlowServer(flows_dir=args.directory, enable_hot_reload=args.reload)
             server.run(host=args.host, port=args.port, reload=args.reload)
         else:
             # Single flow mode
-            server = FlowServer(project_dir=args.directory)
+            server = FlowServer(project_dir=args.directory, enable_hot_reload=args.reload)
             server.run(host=args.host, port=args.port, reload=args.reload)
     except Exception as e:
         print(f"❌ Error starting server: {e}")

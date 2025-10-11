@@ -85,8 +85,16 @@ class CodeMerger:
         # Check if this is a stub (raises NotImplementedTaskError)
         is_stub = self._is_stub_function(node)
 
-        # Extract full function body as string
-        start_line = node.lineno - 1  # AST is 1-indexed
+        # Extract full function body as string, including decorators
+        # node.lineno points to the 'def' statement, but decorators come before it
+        # So we need to find the first decorator's line number if there are any
+        if node.decorator_list:
+            # Use the first decorator's line number as the start
+            start_line = node.decorator_list[0].lineno - 1  # AST is 1-indexed
+        else:
+            # No decorators, use the function's line number
+            start_line = node.lineno - 1  # AST is 1-indexed
+
         end_line = node.end_lineno
         body_lines = self.source_lines[start_line:end_line]
         body = '\n'.join(body_lines)
@@ -234,7 +242,7 @@ def extract_implementation_status(source_code: str) -> Dict[str, bool]:
                 for stmt in node.body:
                     if isinstance(stmt, ast.Assign):
                         for target in stmt.targets:
-                            if isinstance(target, ast.Name) and target.name == 'tasks':
+                            if isinstance(target, ast.Name) and target.id == 'tasks':
                                 # Extract dictionary
                                 if isinstance(stmt.value, ast.Dict):
                                     status = {}
