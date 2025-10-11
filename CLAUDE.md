@@ -232,6 +232,139 @@ When adding tests:
 - Test server by running flow projects and calling API endpoints
 - Generated projects include test files in tests/ subdirectory
 
+## CLI Commands
+
+FlowLang provides a comprehensive CLI for project management and development:
+
+### Installation
+
+After installing FlowLang, the `flowlang` command becomes available:
+
+```bash
+pip install -e .  # Development mode
+# or
+pip install flowlang  # From PyPI
+```
+
+### Core Commands
+
+#### flowlang init - Create New Project
+
+Interactive wizard to create a new flow project from templates:
+
+```bash
+# Interactive mode (recommended)
+flowlang init
+
+# With options
+flowlang init my-project --template APIIntegration --name MyAPI
+
+# Quick start with defaults
+flowlang init . --name QuickFlow --description "A quick test flow"
+
+# Skip git initialization
+flowlang init --no-git
+```
+
+Options:
+- `directory`: Target directory (default: current directory)
+- `--template`, `-t`: Use specific template (e.g., APIIntegration)
+- `--name`, `-n`: Flow name (skips prompt)
+- `--description`, `-d`: Flow description (skips prompt)
+- `--no-git`: Skip git repository initialization
+
+#### flowlang doctor - Environment Check
+
+Validate your FlowLang installation and environment:
+
+```bash
+# Quick health check
+flowlang doctor
+
+# Detailed diagnostics
+flowlang doctor --verbose
+
+# Auto-fix common issues
+flowlang doctor --fix
+```
+
+Checks:
+- Python version (>= 3.8)
+- FlowLang installation
+- Virtual environment status
+- Git availability
+- Template system
+- Core dependencies (pyyaml, fastapi, uvicorn, pydantic)
+
+#### flowlang upgrade - Update FlowLang
+
+Upgrade to the latest version:
+
+```bash
+# Check for updates
+flowlang upgrade --check
+
+# Upgrade to latest stable
+flowlang upgrade
+
+# Include pre-release versions
+flowlang upgrade --pre
+```
+
+#### flowlang version - Version Info
+
+Display version and environment information:
+
+```bash
+# Human-readable format
+flowlang version
+
+# JSON output
+flowlang version --json
+```
+
+#### flowlang completions - Shell Completions
+
+Generate shell completion scripts:
+
+```bash
+# Bash
+flowlang completions bash >> ~/.bash_completion
+source ~/.bash_completion
+
+# Zsh
+mkdir -p ~/.zsh/completions
+flowlang completions zsh > ~/.zsh/completions/_flowlang
+# Add to ~/.zshrc: fpath=(~/.zsh/completions $fpath)
+# Then run: compinit
+
+# Fish
+mkdir -p ~/.config/fish/completions
+flowlang completions fish > ~/.config/fish/completions/flowlang.fish
+```
+
+### Development Commands
+
+```bash
+# Validate a flow
+python -m flowlang validate flow.yaml --tasks-file flow.py
+
+# Watch mode (live testing)
+python -m flowlang watch flow.yaml --test-inputs inputs.json
+
+# Template management
+python -m flowlang template list
+python -m flowlang template create APIIntegration ./output --var KEY=value
+
+# Scaffolder
+python -m flowlang scaffolder scaffold flow.yaml -o ./project
+python -m flowlang scaffolder update flow.yaml -o ./project
+
+# Server
+python -m flowlang.server --project ./my-project --port 8000 --reload
+python -m flowlang.server --multi ./flows --reload
+```
+
 ## Common Tasks
 
 ### Creating a New Task
@@ -512,6 +645,33 @@ print(f"Unimplemented: {status['unimplemented_tasks']}")
      - Browser and Node.js support
      - Tree-shakeable ES modules
      - Methods: `executeFlow()`, `executeFlowStream()`, `listFlows()`, `cancelExecution()`
+
+8. **Developer Experience Tools** ✅: Comprehensive CLI for project management
+   - **flowlang init**: Interactive flow creation wizard
+     - Template selection with descriptions
+     - Variable prompts with defaults
+     - Automatic git initialization
+     - Complete project scaffolding
+   - **flowlang doctor**: Environment validation and health checks
+     - Python version check (>= 3.8)
+     - Dependency verification
+     - Template system validation
+     - Auto-fix common issues (--fix flag)
+   - **flowlang upgrade**: Package update management
+     - Check for updates without installing
+     - Pre-release version support
+     - Automatic PyPI version checking
+   - **flowlang version**: Version and environment information
+     - Human-readable and JSON formats
+     - Python version and platform details
+   - **flowlang completions**: Shell completion scripts
+     - Bash, Zsh, and Fish support
+     - Command and option completion
+     - Easy installation instructions
+   - Entry points:
+     - Console script: `flowlang` command (after pip install)
+     - Module entry: `python -m flowlang` (always available)
+     - All commands accessible both ways
 
 ## Planned Features (Not Yet Implemented)
 

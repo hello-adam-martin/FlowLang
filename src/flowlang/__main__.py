@@ -2,11 +2,17 @@
 FlowLang CLI
 
 Usage:
-    python -m flowlang validate <flow.yaml>
-    python -m flowlang watch <flow.yaml> [options]
-    python -m flowlang template <command> [options]
-    python -m flowlang scaffolder <command> <args>
-    python -m flowlang server <command> <args>
+    python -m flowlang init [options]               # Create new project
+    python -m flowlang doctor [options]             # Check environment
+    python -m flowlang upgrade [options]            # Upgrade FlowLang
+    python -m flowlang version [options]            # Show version
+    python -m flowlang completions <shell>          # Shell completions
+
+    python -m flowlang validate <flow.yaml>         # Validate flow
+    python -m flowlang watch <flow.yaml> [options]  # Watch mode
+    python -m flowlang template <command> [options] # Templates
+    python -m flowlang scaffolder <command> <args>  # Scaffolder
+    python -m flowlang server <command> <args>      # Server
 """
 
 import sys
@@ -16,11 +22,104 @@ from pathlib import Path
 
 def main():
     parser = argparse.ArgumentParser(
-        description='FlowLang CLI',
+        description='FlowLang - Workflow orchestration made simple',
         usage='python -m flowlang <command> [<args>]'
     )
 
+    parser.add_argument(
+        '--version',
+        action='store_true',
+        help='Show FlowLang version'
+    )
+
     subparsers = parser.add_subparsers(dest='command', help='Commands')
+
+    # Developer Experience Commands
+
+    # Init command
+    init_parser = subparsers.add_parser(
+        'init',
+        help='Create a new flow project interactively'
+    )
+    init_parser.add_argument(
+        'directory',
+        nargs='?',
+        default='.',
+        help='Directory to create the project in (default: current directory)'
+    )
+    init_parser.add_argument(
+        '--template', '-t',
+        help='Use a specific template (e.g., APIIntegration)'
+    )
+    init_parser.add_argument(
+        '--name', '-n',
+        help='Flow name (skips interactive prompt)'
+    )
+    init_parser.add_argument(
+        '--description', '-d',
+        help='Flow description (skips interactive prompt)'
+    )
+    init_parser.add_argument(
+        '--no-git',
+        action='store_true',
+        help='Skip git repository initialization'
+    )
+
+    # Doctor command
+    doctor_parser = subparsers.add_parser(
+        'doctor',
+        help='Check your FlowLang environment'
+    )
+    doctor_parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Show detailed diagnostic information'
+    )
+    doctor_parser.add_argument(
+        '--fix',
+        action='store_true',
+        help='Attempt to fix common issues automatically'
+    )
+
+    # Upgrade command
+    upgrade_parser = subparsers.add_parser(
+        'upgrade',
+        help='Upgrade FlowLang to the latest version'
+    )
+    upgrade_parser.add_argument(
+        '--check',
+        action='store_true',
+        help='Check for updates without installing'
+    )
+    upgrade_parser.add_argument(
+        '--pre',
+        action='store_true',
+        help='Include pre-release versions'
+    )
+
+    # Version command
+    version_parser = subparsers.add_parser(
+        'version',
+        help='Show FlowLang version information'
+    )
+    version_parser.add_argument(
+        '--json',
+        action='store_true',
+        help='Output in JSON format'
+    )
+
+    # Completions command
+    completions_parser = subparsers.add_parser(
+        'completions',
+        help='Generate shell completion scripts'
+    )
+    completions_parser.add_argument(
+        'shell',
+        choices=['bash', 'zsh', 'fish'],
+        help='Shell type'
+    )
+
+    # Development Commands
 
     # Validate command
     validate_parser = subparsers.add_parser(
@@ -97,7 +196,32 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == 'validate':
+    # Handle --version flag
+    if args.version:
+        try:
+            from . import __version__
+            print(f"FlowLang {__version__}")
+        except (ImportError, AttributeError):
+            print("FlowLang (version unknown)")
+        sys.exit(0)
+
+    # Route to appropriate command handler
+    if args.command == 'init':
+        from flowlang.cli_init import cmd_init
+        sys.exit(cmd_init(args))
+    elif args.command == 'doctor':
+        from flowlang.cli_doctor import cmd_doctor
+        sys.exit(cmd_doctor(args))
+    elif args.command == 'upgrade':
+        from flowlang.cli_upgrade import cmd_upgrade
+        sys.exit(cmd_upgrade(args))
+    elif args.command == 'version':
+        from flowlang.cli_version import cmd_version
+        sys.exit(cmd_version(args))
+    elif args.command == 'completions':
+        from flowlang.cli_completions import cmd_completions
+        sys.exit(cmd_completions(args))
+    elif args.command == 'validate':
         run_validate(args)
     elif args.command == 'watch':
         run_watch(args)

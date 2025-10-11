@@ -1,0 +1,367 @@
+flow: OrderFulfillment
+description: |
+  Complete order fulfillment system demonstrating all FlowLang features.
+  Validates customers, checks inventory, processes payments, and coordinates
+  shipping with comprehensive error handling and cancellation support.
+
+inputs:
+  - name: customer_id
+    type: string
+    required: true
+    description: Unique customer identifier
+
+  - name: items
+    type: array
+    required: true
+    description: List of items to order (product_id, quantity)
+
+  - name: payment_method
+    type: string
+    required: true
+    description: Payment method (card, paypal, etc.)
+
+  - name: payment_details
+    type: object
+    required: true
+    description: Payment method details (varies by method)
+
+  - name: shipping_address
+    type: object
+    required: true
+    description: Delivery address
+
+  - name: order_type
+    type: string
+    required: false
+    default: "standard"
+    description: Order type (standard, express, bulk)
+
+steps:
+  # ===========================================================================
+  # PHASE 1: Customer Validation
+  # ===========================================================================
+  # Fetch customer data and validate eligibility for orders
+
+  - task: FetchCustomer
+    id: customer
+    inputs:
+      customer_id: ${inputs.customer_id}
+    outputs:
+      - profile
+      - membership_status
+      - account_type
+    description: Retrieve customer profile and account details
+
+  - task: ValidateCustomer
+    id: validation
+    inputs:
+      profile: ${customer.profile}
+      membership_status: ${customer.membership_status}
+    outputs:
+      - is_valid
+      - validation_errors
+    description: Check if customer is eligible for orders
+
+  # Guard clause: Exit early if customer validation fails
+  - if: ${validation.is_valid} == false
+    then:
+      - exit:
+          reason: "Customer validation failed"
+          outputs:
+            success: false
+            errors: ${validation.validation_errors}
+
+  # ===========================================================================
+  # PHASE 2: Order Type Validation
+  # ===========================================================================
+  # Express orders require premium membership or high lifetime value
+
+  - task: GetCustomerStatistics
+    id: stats
+    inputs:
+      customer_id: ${inputs.customer_id}
+    outputs:
+      - account_age_years
+      - lifetime_value
+      - order_count
+    description: Retrieve customer account statistics
+
+  # Check if customer qualifies for express orders
+  - if: ${inputs.order_type} == "express"
+    then:
+      # Express requires ANY of: premium membership, high lifetime value, or account age >= 2 years
+      - if:
+          any:
+            - ${customer.membership_status} == "premium"
+            - ${stats.lifetime_value} > 5000
+            - ${stats.account_age_years} >= 2
+        then:
+          - task: LogExpressOrderApproved
+            id: express_log
+            inputs:
+              customer_id: ${inputs.customer_id}
+              reason: "Customer qualifies for express"
+        else:
+          - exit:
+              reason: "Express orders require premium membership, $5000+ lifetime value, or 2+ year account"
+              outputs:
+                success: false
+                error: "express_not_eligible"
+
+  # ===========================================================================
+  # PHASE 3: Inventory Validation
+  # ===========================================================================
+  # Check availability for all items in parallel, then validate all succeeded
+
+  - for_each: ${inputs.items}
+    as: item
+    do:
+      - task: ValidateLineItem
+        id: validate_${item.product_id}
+        inputs:
+          product_id: ${item.product_id}
+          quantity: ${item.quantity}
+        outputs:
+          - available_quantity
+          - unit_price
+          - valid
+        description: Check if item is available in requested quantity
+
+  # Collect validation results (in production, would aggregate from loop outputs)
+  - task: AggregateItemValidation
+    id: item_validation
+    inputs:
+      items: ${inputs.items}
+    outputs:
+      - all_valid
+      - unavailable_items
+    description: Check if all items are available
+
+  # Guard clause: Exit if any items unavailable
+  - if: ${item_validation.all_valid} == false
+    then:
+      - exit:
+          reason: "Some items are unavailable"
+          outputs:
+            success: false
+            unavailable_items: ${item_validation.unavailable_items}
+
+  # ===========================================================================
+  # PHASE 4: Pricing Calculation
+  # ===========================================================================
+  # Calculate prices based on order type (standard, express, or bulk)
+
+  - task: CalculateSubtotal
+    id: subtotal
+    inputs:
+      items: ${inputs.items}
+    outputs:
+      - subtotal_amount
+    description: Calculate pre-tax, pre-discount subtotal
+
+  # Use switch/case for different pricing logic by order type
+  - switch: ${inputs.order_type}
+    cases:
+      - when: "standard"
+        do:
+          - task: ApplyStandardPricing
+            id: pricing
+            inputs:
+              subtotal: ${subtotal.subtotal_amount}
+              customer_tier: ${customer.membership_status}
+            outputs:
+              - final_price
+              - discount_applied
+              - shipping_cost
+
+      - when: "express"
+        do:
+          - task: ApplyExpressPricing
+            id: pricing
+            inputs:
+              subtotal: ${subtotal.subtotal_amount}
+              customer_tier: ${customer.membership_status}
+            outputs:
+              - final_price
+              - discount_applied
+              - shipping_cost
+
+      - when: "bulk"
+        do:
+          - task: ApplyBulkPricing
+            id: pricing
+            inputs:
+              subtotal: ${subtotal.subtotal_amount}
+              item_count: ${inputs.items}
+            outputs:
+              - final_price
+              - discount_applied
+              - shipping_cost
+
+      - default:
+          - exit:
+              reason: "Invalid order type"
+              outputs:
+                success: false
+                error: "invalid_order_type"
+
+  # ===========================================================================
+  # PHASE 5: Inventory Reservation
+  # ===========================================================================
+  # Reserve inventory for all items (can be cancelled via on_cancel)
+
+  - for_each: ${inputs.items}
+    as: item
+    do:
+      - task: ReserveInventory
+        id: reserve_${item.product_id}
+        inputs:
+          product_id: ${item.product_id}
+          quantity: ${item.quantity}
+        outputs:
+          - reservation_id
+          - expires_at
+        description: Hold inventory for this order
+
+  # ===========================================================================
+  # PHASE 6: Payment Processing
+  # ===========================================================================
+  # Attempt payment with retry logic and error handling
+
+  - task: ProcessPayment
+    id: payment
+    inputs:
+      customer_id: ${inputs.customer_id}
+      amount: ${pricing.final_price}
+      payment_method: ${inputs.payment_method}
+      payment_details: ${inputs.payment_details}
+    outputs:
+      - transaction_id
+      - payment_status
+      - confirmation_code
+    retry:
+      max_attempts: 3
+      delay_seconds: 2
+      backoff_multiplier: 2
+    on_error:
+      # If payment fails after all retries, clean up
+      - task: ReleaseInventoryReservation
+        id: release_on_error
+        inputs:
+          items: ${inputs.items}
+      - task: SendPaymentFailureEmail
+        id: failure_email
+        inputs:
+          customer_id: ${inputs.customer_id}
+          amount: ${pricing.final_price}
+      - exit:
+          reason: "Payment processing failed after retries"
+          outputs:
+            success: false
+            error: "payment_failed"
+
+  # Guard clause: Exit if payment failed
+  - if: ${payment.payment_status} != "success"
+    then:
+      - exit:
+          reason: "Payment was declined"
+          outputs:
+            success: false
+            error: "payment_declined"
+
+  # ===========================================================================
+  # PHASE 7: Order Finalization (Parallel)
+  # ===========================================================================
+  # After successful payment, these tasks can run in parallel
+
+  - parallel:
+      - task: CommitInventoryReservation
+        id: inventory_commit
+        inputs:
+          items: ${inputs.items}
+        outputs:
+          - committed
+        description: Finalize inventory allocation
+
+      - task: SendOrderConfirmation
+        id: customer_email
+        inputs:
+          customer_id: ${inputs.customer_id}
+          order_summary:
+            items: ${inputs.items}
+            total: ${pricing.final_price}
+            confirmation_code: ${payment.confirmation_code}
+        outputs:
+          - email_sent
+        description: Send confirmation email to customer
+
+      - task: NotifyWarehouse
+        id: warehouse_notification
+        inputs:
+          items: ${inputs.items}
+          shipping_address: ${inputs.shipping_address}
+          order_type: ${inputs.order_type}
+        outputs:
+          - notification_id
+        description: Alert warehouse for picking and packing
+
+      - task: UpdateCRM
+        id: crm_update
+        inputs:
+          customer_id: ${inputs.customer_id}
+          order_value: ${pricing.final_price}
+          order_type: ${inputs.order_type}
+        outputs:
+          - crm_updated
+        description: Update customer relationship management system
+
+# =============================================================================
+# CANCELLATION HANDLER
+# =============================================================================
+# If flow is cancelled at any point, clean up resources
+
+on_cancel:
+  - task: ReleaseAllInventoryReservations
+    id: cancel_release_inventory
+    inputs:
+      items: ${inputs.items}
+    description: Release any held inventory
+
+  - task: RefundPayment
+    id: cancel_refund
+    inputs:
+      transaction_id: ${payment.transaction_id}
+    description: Refund payment if it was processed
+
+  - task: NotifyCustomerCancelled
+    id: cancel_notification
+    inputs:
+      customer_id: ${inputs.customer_id}
+    description: Inform customer order was cancelled
+
+# =============================================================================
+# OUTPUTS
+# =============================================================================
+# Define the structure returned on successful completion
+
+outputs:
+  - name: success
+    value: true
+
+  - name: order_id
+    value: ${payment.confirmation_code}
+
+  - name: transaction_id
+    value: ${payment.transaction_id}
+
+  - name: final_price
+    value: ${pricing.final_price}
+
+  - name: discount_applied
+    value: ${pricing.discount_applied}
+
+  - name: estimated_delivery
+    value: ${warehouse_notification.notification_id}
+
+  - name: message
+    value: "Order processed successfully"

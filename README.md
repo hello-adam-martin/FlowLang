@@ -40,7 +40,12 @@ pip install -r requirements.txt
 
 # Install FlowLang in development mode
 pip install -e .
+
+# Verify installation
+flowlang doctor
 ```
+
+After installation, you have access to the `flowlang` CLI for project management.
 
 ### Create Your First Flow
 
@@ -142,6 +147,110 @@ curl -X POST http://localhost:8000/flows/HelloWorld/execute \
 ```
 
 Visit http://localhost:8000/docs for interactive API documentation.
+
+## CLI Commands
+
+FlowLang provides a powerful CLI to streamline your workflow development:
+
+### flowlang init - Create New Projects
+
+Create a new flow project interactively from templates:
+
+```bash
+# Interactive mode (recommended) - guides you through template selection
+flowlang init
+
+# Quick start with specific template
+flowlang init my-project --template APIIntegration --name MyAPI
+
+# Non-interactive with all options
+flowlang init . --name QuickFlow --description "A quick test flow" --no-git
+```
+
+The wizard will:
+- Let you choose from available templates (like APIIntegration)
+- Prompt for flow name and description
+- Ask for template variables with smart defaults
+- Generate complete project structure
+- Initialize git repository (optional)
+
+### flowlang doctor - Environment Check
+
+Validate your FlowLang installation and environment:
+
+```bash
+# Quick health check
+flowlang doctor
+
+# Detailed diagnostics
+flowlang doctor --verbose
+
+# Auto-fix missing dependencies
+flowlang doctor --fix
+```
+
+Checks:
+- Python version (>= 3.8)
+- FlowLang installation
+- Virtual environment status
+- Git availability
+- Template system
+- Core dependencies (pyyaml, fastapi, uvicorn, pydantic)
+
+### flowlang upgrade - Update FlowLang
+
+Keep FlowLang up to date:
+
+```bash
+# Check for updates without installing
+flowlang upgrade --check
+
+# Upgrade to latest stable version
+flowlang upgrade
+
+# Include pre-release versions
+flowlang upgrade --pre
+```
+
+### flowlang version - Version Info
+
+Display version and environment information:
+
+```bash
+# Human-readable format
+flowlang version
+
+# JSON output for scripts
+flowlang version --json
+```
+
+### flowlang completions - Shell Completions
+
+Enable tab completion in your shell:
+
+```bash
+# Bash
+flowlang completions bash >> ~/.bash_completion
+source ~/.bash_completion
+
+# Zsh
+mkdir -p ~/.zsh/completions
+flowlang completions zsh > ~/.zsh/completions/_flowlang
+# Add to ~/.zshrc: fpath=(~/.zsh/completions $fpath)
+# Then run: compinit
+
+# Fish
+mkdir -p ~/.config/fish/completions
+flowlang completions fish > ~/.config/fish/completions/flowlang.fish
+```
+
+**Alternative Usage**: All commands also work with `python -m flowlang`:
+
+```bash
+python -m flowlang init
+python -m flowlang doctor
+python -m flowlang version
+```
 
 ## Core Features
 
@@ -1101,11 +1210,17 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
   - API Integration template (REST API client with auth, retry, error handling)
 - **Python Client SDK** (type-safe API client with async/sync support, streaming, retry logic)
 - **TypeScript Client SDK** (modern Promise-based client for Node.js and browsers)
+- **Developer Experience CLI** (flowlang init, doctor, upgrade, version, completions)
+  - Interactive project creation wizard
+  - Environment validation and auto-fix
+  - Package update management
+  - Shell completion scripts (bash, zsh, fish)
 - Auto-generated project structure
 - Complete documentation generation
 - Multi-flow support with auto-discovery
 - VS Code integration (autocompletion, validation, snippets)
 - Flow visualization (Mermaid diagrams, CLI, API)
+- Flow cancellation with cleanup handlers
 
 🚧 **In Progress**:
 - Additional templates (ETL Pipeline, Approval Workflow, Notification Flow)
