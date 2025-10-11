@@ -34,6 +34,8 @@ Examples:
   flowlang doctor                  Check your FlowLang environment
   flowlang upgrade                 Upgrade FlowLang to the latest version
   flowlang version                 Show FlowLang version
+  flowlang connection list         List available connection plugins
+  flowlang connection info postgres Show details about a connection plugin
 
 For more information, visit: https://github.com/hello-adam-martin/FlowLang
 """
@@ -139,6 +141,18 @@ For more information, visit: https://github.com/hello-adam-martin/FlowLang
         help='Shell type'
     )
 
+    # flowlang connection
+    connection_parser = subparsers.add_parser(
+        'connection',
+        help='Manage connection plugins',
+        description='Manage FlowLang connection plugins for databases and services'
+    )
+    connection_parser.add_argument(
+        'connection_args',
+        nargs=argparse.REMAINDER,
+        help='Connection subcommand and arguments'
+    )
+
     return parser
 
 
@@ -169,6 +183,9 @@ def main():
         elif args.command == 'completions':
             from .cli_completions import cmd_completions
             return cmd_completions(args)
+        elif args.command == 'connection':
+            from .cli_connection import cmd_connection
+            return cmd_connection(args)
         else:
             print(f"Unknown command: {args.command}")
             return 1
