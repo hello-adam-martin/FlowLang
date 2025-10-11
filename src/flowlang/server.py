@@ -24,6 +24,8 @@ import json
 from .executor import FlowExecutor
 from .exceptions import FlowLangError, NotImplementedTaskError
 from .hot_reload import FileWatcher, ReloadManager
+from .cancellation import CancellationToken, ExecutionHandle
+import uuid
 
 
 class FlowExecuteRequest(BaseModel):
@@ -109,6 +111,9 @@ class FlowServer:
 
         # Create executor
         self.executor = FlowExecutor(self.registry)
+
+        # Track running executions for cancellation
+        self.executions: Dict[str, ExecutionHandle] = {}
 
         # Create dynamic request model based on flow inputs
         self.request_model = self._create_request_model()
@@ -422,6 +427,12 @@ class FlowServer:
 
             start_time = time.time()
 
+            # Create cancellation token and execution handle
+            execution_id = str(uuid.uuid4())
+            cancellation_token = CancellationToken()
+            handle = ExecutionHandle(execution_id, flow_name, cancellation_token)
+            self.executions[execution_id] = handle
+
             try:
                 # Convert request inputs to dict
                 # The dynamic model has an 'inputs' field containing the actual input values
@@ -432,24 +443,36 @@ class FlowServer:
                     # Fallback for generic model
                     inputs_dict = request.dict().get('inputs', {})
 
-                # Execute the flow
+                # Execute the flow with cancellation token
                 result = await self.executor.execute_flow(
                     self.flow_yaml,
-                    inputs=inputs_dict
+                    inputs=inputs_dict,
+                    cancellation_token=cancellation_token
                 )
 
                 execution_time = (time.time() - start_time) * 1000
 
+                # Mark execution as completed or failed
                 if result['success']:
+                    handle.mark_completed(result)
                     return FlowExecuteResponse(
                         success=True,
                         outputs=result.get('outputs', {}),
                         execution_time_ms=execution_time,
                         flow=flow_name
                     )
+                elif result.get('cancelled'):
+                    handle.mark_cancelled()
+                    return FlowExecuteResponse(
+                        success=False,
+                        error=result.get('reason', 'Execution cancelled'),
+                        execution_time_ms=execution_time,
+                        flow=flow_name
+                    )
                 else:
                     # Flow completed but with errors
                     error_msg = result.get('error', 'Unknown error')
+                    handle.mark_failed(str(error_msg))
                     return FlowExecuteResponse(
                         success=False,
                         error=str(error_msg),

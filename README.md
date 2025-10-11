@@ -493,6 +493,96 @@ Both methods intelligently:
 
 ## API Usage
 
+### Client SDKs
+
+FlowLang provides official client SDKs for Python and TypeScript/JavaScript.
+
+#### Python Client SDK
+
+Type-safe Python client for calling flows programmatically:
+
+```python
+from flowlang import FlowLangClient
+
+# Async usage (recommended)
+async with FlowLangClient("http://localhost:8000") as client:
+    result = await client.execute_flow("HelloWorld", {"user_name": "Alice"})
+    print(result.outputs["message"])
+
+# Sync usage
+with FlowLangClient("http://localhost:8000") as client:
+    result = client.execute_flow_sync("HelloWorld", {"user_name": "Alice"})
+    print(result.outputs["message"])
+
+# Streaming execution with events
+async with FlowLangClient("http://localhost:8000") as client:
+    def handle_event(event_type, data):
+        if event_type == 'step_completed':
+            print(f"Completed: {data['step_id']}")
+
+    result = await client.execute_flow_stream(
+        "HelloWorld",
+        {"user_name": "Alice"},
+        on_event=handle_event
+    )
+```
+
+**Features**:
+- Type-safe flow execution (async and sync)
+- Automatic retry with exponential backoff
+- Streaming support for long-running flows
+- Comprehensive error handling
+- Health checks and flow introspection
+- Context manager support for automatic cleanup
+
+**Installation**: The client requires `httpx` (already in requirements.txt)
+
+See [docs/client-sdk.md](docs/client-sdk.md) for complete documentation and [examples/client_usage.py](examples/client_usage.py) for detailed examples.
+
+#### TypeScript/JavaScript Client SDK
+
+Modern TypeScript client for Node.js and browsers:
+
+```typescript
+import { FlowLangClient } from '@flowlang/client';
+
+const client = new FlowLangClient({
+  baseUrl: 'http://localhost:8000',
+});
+
+// Execute a flow (with type safety!)
+const result = await client.executeFlow<{ message: string }>(
+  'HelloWorld',
+  { user_name: 'Alice' }
+);
+console.log(result.outputs.message);
+
+// Streaming execution
+await client.executeFlowStream('HelloWorld', { user_name: 'Alice' }, {
+  onEvent: (eventType, data) => {
+    if (eventType === 'step_completed') {
+      console.log(`Completed: ${data.step_id}`);
+    }
+  }
+});
+```
+
+**Features**:
+- Full TypeScript support with generics
+- Promise-based API (async/await)
+- Automatic retry with exponential backoff
+- Streaming events (Server-Sent Events)
+- Works in browser and Node.js
+- Zero dependencies (uses native fetch)
+- Tree-shakeable for minimal bundle size
+
+**Installation**:
+```bash
+npm install @flowlang/client
+```
+
+See [clients/typescript/README.md](clients/typescript/README.md) for complete documentation and [clients/typescript/examples/](clients/typescript/examples/) for detailed examples.
+
 ### API Root / Endpoints Overview
 
 Get an overview of the API and all available endpoints:
@@ -1009,6 +1099,8 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
 - **Watch mode for live testing** (auto-execution, color-coded output, performance metrics)
 - **Flow templates system** (pre-built production-ready templates with variable substitution)
   - API Integration template (REST API client with auth, retry, error handling)
+- **Python Client SDK** (type-safe API client with async/sync support, streaming, retry logic)
+- **TypeScript Client SDK** (modern Promise-based client for Node.js and browsers)
 - Auto-generated project structure
 - Complete documentation generation
 - Multi-flow support with auto-discovery
@@ -1017,7 +1109,6 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
 
 🚧 **In Progress**:
 - Additional templates (ETL Pipeline, Approval Workflow, Notification Flow)
-- Client SDKs (Python, TypeScript)
 - Advanced error handling patterns
 - Flow composition and subflows
 

@@ -18,6 +18,24 @@ from .exceptions import (
     NotImplementedTaskError,
 )
 
+# Client SDK (optional dependency - httpx required)
+try:
+    from .client import (
+        FlowLangClient,
+        FlowExecutionResult,
+        FlowInfo as ClientFlowInfo,
+        FlowNotReadyError,
+        FlowNotFoundError,
+    )
+    _client_available = True
+except ImportError:
+    _client_available = False
+    FlowLangClient = None
+    FlowExecutionResult = None
+    ClientFlowInfo = None
+    FlowNotReadyError = None
+    FlowNotFoundError = None
+
 __all__ = [
     "FlowExecutor",
     "TaskRegistry",
@@ -35,3 +53,13 @@ __all__ = [
     "FlowExecutionError",
     "NotImplementedTaskError",
 ]
+
+# Add client SDK exports if available
+if _client_available:
+    __all__.extend([
+        "FlowLangClient",
+        "FlowExecutionResult",
+        "ClientFlowInfo",
+        "FlowNotReadyError",
+        "FlowNotFoundError",
+    ])

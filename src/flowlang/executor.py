@@ -16,6 +16,7 @@ from .exceptions import (
     MaxRetriesExceededError,
     FlowTerminationException,
 )
+from .cancellation import CancellationToken, CancellationError
 
 
 class FlowExecutor:
@@ -54,7 +55,8 @@ class FlowExecutor:
         self,
         flow_yaml: Union[str, Dict],
         inputs: Optional[Dict[str, Any]] = None,
-        event_callback: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
+        event_callback: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None,
+        cancellation_token: Optional[CancellationToken] = None
     ) -> Dict[str, Any]:
         """
         Execute a flow from YAML definition.
@@ -64,12 +66,14 @@ class FlowExecutor:
             inputs: Input variables for the flow
             event_callback: Optional async callback for execution events.
                            Called with (event_type: str, event_data: dict)
+            cancellation_token: Optional token for cancellation support
 
         Returns:
             Dictionary containing:
             - success: bool
             - outputs: Any outputs from the flow
             - error: Error message if failed
+            - cancelled: True if execution was cancelled
         """
         # Store callback and start time
         self._event_callback = event_callback
@@ -95,8 +99,8 @@ class FlowExecutor:
             'inputs': inputs or {}
         })
 
-        # Create execution context
-        context = FlowContext(inputs)
+        # Create execution context with cancellation token
+        context = FlowContext(inputs, cancellation_token)
 
         try:
             # Validate inputs
@@ -132,6 +136,39 @@ class FlowExecutor:
             return {
                 'success': True,
                 'outputs': outputs,
+            }
+
+        except CancellationError as e:
+            # Flow was cancelled
+            execution_time_ms = (time.time() - self._flow_start_time) * 1000
+
+            # Run cleanup handlers
+            cleanup_errors = []
+            if cancellation_token:
+                cleanup_errors = await cancellation_token.run_cleanup_handlers()
+
+            # Execute on_cancel handler if defined in flow
+            on_cancel_steps = flow_def.get('on_cancel', [])
+            if on_cancel_steps:
+                try:
+                    await self._execute_steps(on_cancel_steps, context)
+                except Exception as cleanup_error:
+                    cleanup_errors.append(cleanup_error)
+
+            # Emit flow_cancelled event
+            await self._emit_event('flow_cancelled', {
+                'flow': flow_name,
+                'reason': e.reason,
+                'duration_ms': execution_time_ms,
+                'cleanup_errors': [str(err) for err in cleanup_errors] if cleanup_errors else None
+            })
+
+            return {
+                'success': False,
+                'cancelled': True,
+                'reason': e.reason,
+                'outputs': {},
+                'cleanup_errors': [str(err) for err in cleanup_errors] if cleanup_errors else None
             }
 
         except FlowTerminationException as e:
@@ -203,6 +240,8 @@ class FlowExecutor:
     ):
         """Execute a list of steps sequentially"""
         for step in steps:
+            # Check for cancellation before each step
+            context.check_cancellation()
             await self._execute_step(step, context)
 
     async def _execute_step(
@@ -591,6 +630,9 @@ class FlowExecutor:
         item_var = step.get('as', 'item')
 
         for item in items:
+            # Check for cancellation before each iteration
+            context.check_cancellation()
+
             # Create a new context with the loop variable
             # Store the item in a way it can be referenced
             original_inputs = context.inputs.copy()

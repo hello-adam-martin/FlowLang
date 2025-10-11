@@ -2,7 +2,10 @@
 FlowContext - Tracks execution state and resolves variables
 """
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .cancellation import CancellationToken
 
 
 class FlowContext:
@@ -11,16 +14,22 @@ class FlowContext:
     step outputs, and variable resolution.
     """
 
-    def __init__(self, inputs: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        inputs: Optional[Dict[str, Any]] = None,
+        cancellation_token: Optional["CancellationToken"] = None
+    ):
         """
         Initialize flow context with inputs.
 
         Args:
             inputs: Dictionary of input variables for the flow
+            cancellation_token: Optional token for cancellation support
         """
         self.inputs = inputs or {}
         self.outputs = {}  # Maps step_id -> output data
         self.metadata = {}  # Additional context metadata
+        self.cancellation_token = cancellation_token  # Cancellation token
 
     def set_step_output(self, step_id: str, output: Any):
         """Store the output from a step"""
@@ -124,6 +133,32 @@ class FlowContext:
                 raise KeyError(f"Cannot resolve path: {var_path}")
 
         return current
+
+    def check_cancellation(self):
+        """
+        Check if cancellation has been requested and raise exception if so.
+
+        Raises:
+            CancellationError: If cancellation has been requested
+        """
+        if self.cancellation_token:
+            self.cancellation_token.check_cancelled()
+
+    def is_cancelled(self) -> bool:
+        """Check if cancellation has been requested."""
+        if self.cancellation_token:
+            return self.cancellation_token.is_cancelled()
+        return False
+
+    def add_cleanup_handler(self, handler):
+        """
+        Add a cleanup handler to be called on cancellation.
+
+        Args:
+            handler: Async or sync callable to execute on cleanup
+        """
+        if self.cancellation_token:
+            self.cancellation_token.add_cleanup_handler(handler)
 
     def __repr__(self):
         return f"FlowContext(inputs={self.inputs}, outputs={list(self.outputs.keys())})"

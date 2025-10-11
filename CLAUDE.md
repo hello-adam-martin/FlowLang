@@ -395,7 +395,35 @@ print(f"Unimplemented: {status['unimplemented_tasks']}")
 
 ## Implemented Features
 
-1. **Flow Scaffolder** ✅: Auto-generate complete project structure from flow YAML
+1. **Flow Cancellation** ✅: Cancel running flows with cleanup handlers
+   - `CancellationToken` class in `src/flowlang/cancellation.py`
+   - Cancellation checks between steps and loop iterations
+   - `on_cancel` handler support in flow definitions
+   - Server endpoints:
+     - `POST /flows/{name}/executions/{id}/cancel` - Cancel execution
+     - `GET /flows/{name}/executions` - List executions
+     - `GET /flows/{name}/executions/{id}` - Get execution status
+   - Cleanup handlers run in LIFO order on cancellation
+   - Execution tracking with ExecutionHandle
+   - Client SDK support (Python: `cancel_execution()` / TypeScript: `cancelExecution()`)
+   - Usage in flow YAML:
+     ```yaml
+     on_cancel:  # Optional cleanup steps when cancelled
+       - task: CleanupResources
+         inputs:
+           resource_id: ${step_id.resource}
+     ```
+   - Usage in tasks:
+     ```python
+     # Add cleanup handler from a task
+     context.add_cleanup_handler(lambda: cleanup_resources())
+
+     # Check if cancelled
+     if context.is_cancelled():
+         return {'status': 'cancelled'}
+     ```
+
+2. **Flow Scaffolder** ✅: Auto-generate complete project structure from flow YAML
    - Scaffold new projects: `python -m flowlang.scaffolder scaffold flow.yaml -o ./project`
    - Update existing projects: `python -m flowlang.scaffolder update flow.yaml -o ./project`
    - Generates: flow.py, api.py, tests/, tools/, README.md
@@ -469,18 +497,33 @@ print(f"Unimplemented: {status['unimplemented_tasks']}")
    - Extensible: Add new templates by creating template directory with `{{VARIABLE}}` placeholders
    - Template tasks must use scaffolder-compatible format (decorators inside `create_task_registry()` function)
 
+7. **Client SDKs** ✅: Python and TypeScript client libraries for calling flows
+   - **Python Client**: `src/flowlang/client.py`
+     - Both sync and async methods
+     - Automatic retry logic
+     - Type-safe with FlowExecutionResult
+     - SSE streaming support
+     - Methods: `execute_flow()`, `execute_flow_stream()`, `list_flows()`, `cancel_execution()`
+   - **TypeScript Client**: `clients/typescript/`
+     - NPM package: `@flowlang/client`
+     - Promise-based API
+     - Full TypeScript types with generics
+     - Zero dependencies (native fetch)
+     - Browser and Node.js support
+     - Tree-shakeable ES modules
+     - Methods: `executeFlow()`, `executeFlowStream()`, `listFlows()`, `cancelExecution()`
+
 ## Planned Features (Not Yet Implemented)
 
 The following features are part of the FlowLang vision but not yet implemented:
 
-1. **Client SDKs**: Python and TypeScript client libraries for calling flows
-2. **Subflow Loader**: Load and execute referenced subflows from other files
-3. **Timeout Support**: Task-level timeout enforcement
-4. **Approval Gates**: Human-in-the-loop workflow steps (pause/resume)
-5. **Event Triggers**: Webhook-based flow initiation
-6. **Web UI**: Visual flow designer and monitoring dashboard
-7. **Authentication**: API key and OAuth support for REST API
-8. **Rate Limiting**: Request throttling for production deployments
+1. **Subflow Loader**: Load and execute referenced subflows from other files
+2. **Timeout Support**: Task-level timeout enforcement
+3. **Approval Gates**: Human-in-the-loop workflow steps (pause/resume)
+4. **Event Triggers**: Webhook-based flow initiation
+5. **Web UI**: Visual flow designer and monitoring dashboard
+6. **Authentication**: API key and OAuth support for REST API
+7. **Rate Limiting**: Request throttling for production deployments
 
 ## Design Principles
 

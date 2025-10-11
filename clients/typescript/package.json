@@ -1,0 +1,60 @@
+{
+  "name": "@flowlang/client",
+  "version": "0.1.0",
+  "description": "TypeScript/JavaScript client for FlowLang workflow orchestration",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"examples/**/*.ts\"",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "flowlang",
+    "workflow",
+    "orchestration",
+    "rest-api",
+    "client",
+    "typescript",
+    "javascript"
+  ],
+  "author": "FlowLang Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hello-adam-martin/FlowLang.git",
+    "directory": "clients/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/hello-adam-martin/FlowLang/issues"
+  },
+  "homepage": "https://github.com/hello-adam-martin/FlowLang#readme",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "prettier": "^3.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
