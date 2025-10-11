@@ -61,6 +61,9 @@ All available snippets (type prefix + Tab):
 | `taskif` | Conditional task step |
 | `parallel` | Parallel execution |
 | `conditional` | If/then/else block |
+| `switch` | Multi-way switch/case branching |
+| `case` | Single case for switch statement |
+| `default` | Default case for switch statement |
 | `foreach` | For each loop |
 | `input` | Input definition |
 | `output` | Output definition |
@@ -119,7 +122,7 @@ The complete FlowLang schema is defined in `flowlang-schema.json` at the project
 **Supported constructs:**
 - ✅ Task steps
 - ✅ Parallel execution
-- ✅ Conditional logic (if/then/else)
+- ✅ Conditional logic (if/then/else, switch/case)
 - ✅ Loops (for_each)
 - ✅ Retry configuration
 - ✅ Error handlers

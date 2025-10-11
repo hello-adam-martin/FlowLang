@@ -1,5 +1,5 @@
 """
-TestScaffold API - FastAPI app instance
+UserAuth API - FastAPI app instance
 
 This module creates the FastAPI app that can be run with uvicorn directly:
     uvicorn api:app --host 0.0.0.0 --port 8000 --reload
@@ -17,7 +17,7 @@ from flowlang.server import FlowServer
 server = FlowServer(
     project_dir=".",
     tasks_file="flow.py",
-    title="TestScaffold API",
+    title="UserAuth API",
     version="1.0.0"
 )
 

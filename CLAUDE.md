@@ -89,8 +89,16 @@ FlowLang/
    - FastAPI-based REST API server
    - Auto-loads flow.yaml and flow.py from project directory
    - Dynamically generates Pydantic models for request/response validation
-   - Provides endpoints: /, /health, /flows, /flows/{name}/execute, /flows/{name}/tasks
-   - Includes OpenAPI/Swagger documentation at /docs
+   - Provides endpoints:
+     - `/` - API overview with endpoints, flow status, and readiness
+     - `/health` - Health check with implementation status
+     - `/flows` - List all flows
+     - `/flows/{name}` - Get flow information
+     - `/flows/{name}/execute` - Execute flow
+     - `/flows/{name}/execute/stream` - Execute with Server-Sent Events streaming
+     - `/flows/{name}/tasks` - List tasks and implementation status
+     - `/flows/{name}/visualize` - Get Mermaid diagram
+   - Includes OpenAPI/Swagger documentation at `/docs` and `/redoc`
 
 5. **FlowScaffolder** (src/flowlang/scaffolder.py)
    - Generates complete project structure from flow YAML
@@ -136,7 +144,9 @@ outputs:
 
 - **Sequential steps**: Execute one after another
 - **Parallel execution**: `parallel: [step1, step2, ...]`
-- **Conditionals**: `if:` condition, `then:` steps, `else:` steps
+- **Conditionals**:
+  - Binary: `if:` condition, `then:` steps, `else:` steps
+  - Multi-way: `switch:` expression, `cases:` with `when:` and `do:`, `default:` fallback
 - **Loops**: `for_each:` items, `as:` item_var, `do:` steps
 - **Error handling**: `retry:` config, `on_error:` handler steps
 - **Dependencies**: `depends_on:` [step_ids]
@@ -274,8 +284,15 @@ print(f"Unimplemented: {status['unimplemented_tasks']}")
    - See `src/flowlang/server.py`
    - Auto-generated in every project as `api.py`
    - Dynamic Pydantic models from flow definition
-   - OpenAPI/Swagger docs at `/docs`
-   - Health checks, flow execution, task status endpoints
+   - OpenAPI/Swagger docs at `/docs` and `/redoc`
+   - Comprehensive endpoints:
+     - API overview (/) with flow status and readiness
+     - Health checks (/health) with implementation progress
+     - Flow execution (/flows/{name}/execute)
+     - Streaming execution (/flows/{name}/execute/stream) with Server-Sent Events
+     - Task status tracking (/flows/{name}/tasks)
+     - Flow visualization (/flows/{name}/visualize)
+   - Single-flow and multi-flow server modes
 
 3. **Helper Scripts** ✅: Auto-generated tools for every project
    - `tools/start_server.sh`: Convenient server launcher
@@ -311,6 +328,8 @@ The following features are part of the FlowLang vision but not yet implemented:
 - Parallel execution uses `asyncio.gather()` - true concurrency
 - Error handlers receive error context in `context.metadata['last_error']`
 - Conditional evaluation supports basic comparisons (==, !=, <, >, <=, >=)
+- Switch/case supports single values or lists of values for matching
+- Switch cases are evaluated in order; first match wins (like switch in most languages)
 - Loop variables are temporarily added to `context.inputs` during iteration
 
 ## Git Workflow

@@ -44,7 +44,7 @@ pip install -e .
 
 ### Create Your First Flow
 
-1. **Define your workflow in YAML** (e.g., `my_flow.yaml`):
+1. **Define your workflow in YAML** (e.g., `flows/hello_world.yaml`):
 
 ```yaml
 flow: HelloWorld
@@ -76,24 +76,38 @@ outputs:
     value: ${greet_step.greeting}
 ```
 
-2. **Generate complete project structure**:
+2. **Generate complete project structure** (RECOMMENDED):
 
 ```bash
-python -m flowlang.scaffolder scaffold my_flow.yaml -o ./my_project
+# Convention-based: creates flows/HelloWorld/ from flows/hello_world.yaml
+# Note: Directory names are automatically converted to PascalCase
+python -m flowlang.scaffolder auto flows/hello_world.yaml
 ```
 
 This creates:
 ```
-my_project/
-├── flow.yaml           # Your flow definition
-├── flow.py             # Task stubs to implement
-├── api.py              # FastAPI server
-├── README.md           # Complete documentation
-├── tools/
-│   ├── generate.sh     # Smart regeneration script
-│   └── start_server.sh # Server launcher
-└── tests/
-    └── test_tasks.py   # Unit tests
+flows/
+├── hello_world.yaml    # Your source template (edit this)
+└── HelloWorld/         # Auto-generated project (PascalCase)
+    ├── flow.yaml       # Copy of source (used by server)
+    ├── flow.py         # Task stubs to implement
+    ├── api.py          # FastAPI server
+    ├── README.md       # Complete documentation
+    ├── tools/
+    │   └── start_server.sh # Server launcher
+    └── tests/
+        └── test_tasks.py   # Unit tests
+```
+
+**Naming Convention**: Flow directories are automatically named in PascalCase:
+- `test.yaml` → `Test/`
+- `user_auth.yaml` → `UserAuth/`
+- `my_workflow.yaml` → `MyWorkflow/`
+
+**Alternative (explicit paths)**:
+```bash
+# If you prefer to specify output directory explicitly
+python -m flowlang.scaffolder scaffold my_flow.yaml -o ./my_project
 ```
 
 3. **Implement your tasks** in `flow.py`:
@@ -135,7 +149,7 @@ FlowLang supports:
 
 - **Sequential execution**: Steps run one after another
 - **Parallel execution**: Run multiple steps concurrently
-- **Conditionals**: `if/then/else` logic
+- **Conditionals**: `if/then/else` logic and `switch/case` multi-way branching
 - **Loops**: `for_each` over collections
 - **Error handling**: Retries and fallback logic
 - **Variable resolution**: `${inputs.var}`, `${step.output}`
@@ -148,6 +162,28 @@ The scaffolder is intelligent:
 - **Updates**: Preserves your implementations, adds new tasks
 - **Smart merge**: Never overwrites working code
 - **Progress tracking**: Shows 5/15 tasks implemented, 10 pending
+- **Convention-based**: `auto` command infers output directory from YAML path
+- **Smart naming**: Automatically converts filenames to PascalCase directories
+- **Batch processing**: `auto-all` processes multiple flows at once
+
+**Convention-based workflow (RECOMMENDED)**:
+```bash
+# Create source template
+flows/my_flow.yaml
+
+# Auto-generate project (creates flows/MyFlow/ in PascalCase)
+python -m flowlang.scaffolder auto flows/my_flow.yaml
+
+# Or batch process multiple flows
+python -m flowlang.scaffolder auto-all flows/
+```
+
+**Benefits**:
+- Source YAML (`flows/my_flow.yaml`) is your master template
+- Generated project (`flows/MyFlow/`) contains copy + implementations (auto-converted to PascalCase)
+- Clear separation between source and generated code
+- Easy to version control (commit YAMLs, gitignore generated projects if desired)
+- Works seamlessly with multi-flow server
 
 ### REST API Server
 
@@ -167,18 +203,24 @@ Serve multiple flows from a single API server:
 - **Aggregate health**: Monitor readiness of all flows at once
 - **Per-flow isolation**: Each flow has its own executor and task registry
 
-**Directory structure**:
+**Directory structure** (YAML-first pattern):
 ```
 flows/
-├── user_auth/
-│   ├── flow.yaml
-│   └── flow.py
-├── todo_manager/
-│   ├── flow.yaml
-│   └── flow.py
-└── notifications/
-    ├── flow.yaml
-    └── flow.py
+├── user_auth.yaml      # Source template (edit this)
+├── UserAuth/           # Auto-generated project (PascalCase)
+│   ├── flow.yaml       # Copy of source (used by server)
+│   └── flow.py         # Task implementations
+├── todo_manager.yaml   # Source template (edit this)
+├── TodoManager/        # Auto-generated project (PascalCase)
+│   ├── flow.yaml       # Copy of source (used by server)
+│   └── flow.py         # Task implementations
+└── ...
+```
+
+**Create multiple flows**:
+```bash
+# Batch process all YAML files in flows/
+python -m flowlang.scaffolder auto-all flows/
 ```
 
 **Start multi-flow server**:
@@ -196,10 +238,16 @@ python -m flowlang.server --multi flows
 ./start_multi_server.sh --reload
 ```
 
-**API endpoints remain the same**:
-- `/flows` - List all flows
-- `/flows/{flow_name}/execute` - Execute specific flow
+**Key API endpoints**:
+- `/` - API overview with all available endpoints and flow status
 - `/health` - Shows aggregate status for all flows
+- `/flows` - List all flows with schemas
+- `/flows/{flow_name}` - Get specific flow information
+- `/flows/{flow_name}/execute` - Execute specific flow
+- `/flows/{flow_name}/execute/stream` - Execute with real-time event streaming
+- `/flows/{flow_name}/tasks` - List tasks and implementation status
+- `/flows/{flow_name}/visualize` - Get Mermaid diagram of flow
+- `/docs` - Interactive OpenAPI/Swagger documentation
 
 ### VS Code Integration
 
@@ -304,31 +352,136 @@ cd flows/todo_project
 
 ## Development Workflow
 
-### Creating a Flow
+### Creating a Flow (YAML-first pattern)
 
-1. Design your workflow in YAML
-2. Run scaffolder to generate project
-3. Implement tasks one by one
-4. Run tests as you go
-5. Update implementation status
-6. Start the API server
+1. **Create source YAML**: `flows/my_flow.yaml`
+2. **Auto-generate project**: `python -m flowlang.scaffolder auto flows/my_flow.yaml`
+3. **Implement tasks**: Edit `flows/MyFlow/flow.py` (note: PascalCase directory)
+4. **Run tests**: `pytest flows/MyFlow/tests/`
+5. **Update status**: Mark tasks as implemented in `get_implementation_status()`
+6. **Start server**: `cd flows/MyFlow && ./tools/start_server.sh`
 
 ### Updating a Flow
 
 When you change your flow definition:
 
+**Option 1: Re-run auto command** (RECOMMENDED)
 ```bash
-cd my_project
-./tools/generate.sh
+# Edit flows/my_flow.yaml (your source template)
+# Then re-run auto to update the generated project
+python -m flowlang.scaffolder auto flows/my_flow.yaml
 ```
 
-This intelligently:
-- Preserves all implemented tasks
-- Adds new tasks as stubs
-- Updates tests
-- Regenerates documentation
+**Option 2: Batch regenerate all flows**
+```bash
+# From project root - processes all flows in flows/
+./generate_flows.sh
+```
+
+Both methods intelligently:
+- Preserve all implemented tasks
+- Add new tasks as stubs
+- Update tests
+- Regenerate documentation
 
 ## API Usage
+
+### API Root / Endpoints Overview
+
+Get an overview of the API and all available endpoints:
+
+**Single flow mode**:
+```bash
+curl http://localhost:8000/
+```
+
+Returns:
+```json
+{
+  "service": "FlowLang API Server",
+  "version": "1.0.0",
+  "flow": {
+    "name": "HelloWorld",
+    "description": "A simple greeting workflow",
+    "ready": true,
+    "progress": "2/2",
+    "percentage": "100.0%"
+  },
+  "status": "ready",
+  "documentation": {
+    "openapi": "/docs",
+    "redoc": "/redoc",
+    "openapi_json": "/openapi.json"
+  },
+  "endpoints": {
+    "info": {
+      "root": "/",
+      "health": "/health"
+    },
+    "flows": {
+      "list": "/flows",
+      "info": "/flows/HelloWorld",
+      "tasks": "/flows/HelloWorld/tasks",
+      "visualize": "/flows/HelloWorld/visualize"
+    },
+    "execution": {
+      "execute": "/flows/HelloWorld/execute",
+      "stream": "/flows/HelloWorld/execute/stream"
+    }
+  }
+}
+```
+
+**Multi-flow mode**:
+```bash
+curl http://localhost:8000/
+```
+
+Returns:
+```json
+{
+  "service": "FlowLang Multi-Flow API Server",
+  "version": "1.0.0",
+  "status": "ready",
+  "flows": {
+    "count": 2,
+    "names": ["UserAuth", "TodoManager"],
+    "status": {
+      "UserAuth": {
+        "ready": true,
+        "progress": "3/3",
+        "percentage": "100.0%"
+      },
+      "TodoManager": {
+        "ready": true,
+        "progress": "4/4",
+        "percentage": "100.0%"
+      }
+    }
+  },
+  "documentation": {
+    "openapi": "/docs",
+    "redoc": "/redoc",
+    "openapi_json": "/openapi.json"
+  },
+  "endpoints": {
+    "info": {
+      "root": "/",
+      "health": "/health"
+    },
+    "flows": {
+      "list": "/flows",
+      "info": "/flows/{flow_name}",
+      "tasks": "/flows/{flow_name}/tasks",
+      "visualize": "/flows/{flow_name}/visualize"
+    },
+    "execution": {
+      "execute": "/flows/{flow_name}/execute",
+      "stream": "/flows/{flow_name}/execute/stream"
+    }
+  }
+}
+```
 
 ### Execute a Flow
 
@@ -457,6 +610,43 @@ steps:
         id: prefs
 ```
 
+### Multi-Way Branching (Switch/Case)
+
+For cleaner multi-way branching compared to nested if/else:
+
+```yaml
+steps:
+  - task: GetUserStatus
+    id: status_check
+    outputs:
+      - status
+
+  - switch: ${status_check.status}
+    cases:
+      - when: "new"
+        do:
+          - task: SendWelcomeEmail
+          - task: CreateOnboardingTask
+
+      - when: "active"
+        do:
+          - task: SendRegularUpdate
+          - task: CheckSubscription
+
+      - when: "suspended"
+        do:
+          - task: SendReactivationOffer
+          - task: LogSuspension
+
+      - when: ["pending", "trial"]  # Multiple values
+        do:
+          - task: SendTrialReminder
+
+      - default:
+          - task: LogUnknownStatus
+          - task: SendAdminAlert
+```
+
 ### Error Handling
 
 ```yaml
@@ -501,7 +691,7 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
 - Sequential, parallel, conditional, and loop execution
 - Variable resolution and context management
 - Task registry with progress tracking
-- Smart scaffolder with merge capabilities
+- Smart scaffolder with merge capabilities and PascalCase naming
 - REST API server with FastAPI (single and multi-flow modes)
 - Auto-generated project structure
 - Complete documentation generation

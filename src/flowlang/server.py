@@ -15,10 +15,11 @@ from typing import Dict, Any, Optional, List
 import importlib.util
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, create_model
 import yaml
 import uvicorn
+import json
 
 from .executor import FlowExecutor
 from .exceptions import FlowLangError, NotImplementedTaskError
@@ -222,16 +223,42 @@ class FlowServer:
 
         @self.app.get("/", tags=["Info"])
         async def root():
-            """API root - returns basic information"""
+            """API root - returns basic information and available endpoints"""
+            # Get readiness status
+            status = self.registry.get_implementation_status()
+            is_ready = status['unimplemented_count'] == 0
+
             return {
                 "service": "FlowLang API Server",
-                "flow": self.flow_name,
                 "version": self.app.version,
-                "docs": "/docs",
+                "flow": {
+                    "name": self.flow_name,
+                    "description": self.flow_def.get('description'),
+                    "ready": is_ready,
+                    "progress": status['progress'],
+                    "percentage": f"{status['percentage']:.1f}%"
+                },
+                "status": "ready" if is_ready else "incomplete",
+                "documentation": {
+                    "openapi": "/docs",
+                    "redoc": "/redoc",
+                    "openapi_json": "/openapi.json"
+                },
                 "endpoints": {
-                    "execute": f"/flows/{self.flow_name}/execute",
-                    "info": f"/flows/{self.flow_name}",
-                    "list": "/flows"
+                    "info": {
+                        "root": "/",
+                        "health": "/health"
+                    },
+                    "flows": {
+                        "list": "/flows",
+                        "info": f"/flows/{self.flow_name}",
+                        "tasks": f"/flows/{self.flow_name}/tasks",
+                        "visualize": f"/flows/{self.flow_name}/visualize"
+                    },
+                    "execution": {
+                        "execute": f"/flows/{self.flow_name}/execute",
+                        "stream": f"/flows/{self.flow_name}/execute/stream"
+                    }
                 }
             }
 
@@ -407,6 +434,137 @@ class FlowServer:
                     execution_time_ms=execution_time,
                     flow=flow_name
                 )
+
+        @self.app.post(
+            "/flows/{flow_name}/execute/stream",
+            tags=["Execution"],
+            responses={
+                200: {"description": "Flow execution events stream"},
+                404: {"description": "Flow not found"},
+                503: {"description": "Flow not ready - tasks not yet implemented"}
+            }
+        )
+        async def execute_flow_stream(flow_name: str, request: self.request_model):
+            """
+            Execute a flow and stream execution events in real-time using Server-Sent Events (SSE).
+
+            Each event includes:
+            - event: Event type (flow_started, step_started, step_completed, step_failed, flow_completed, flow_failed)
+            - data: Event data as JSON
+
+            Example event format:
+            ```
+            event: step_started
+            data: {"step_id": "validate", "task": "ValidateUser", "timestamp": "2025-10-11T..."}
+
+            event: step_completed
+            data: {"step_id": "validate", "task": "ValidateUser", "outputs": {...}, "duration_ms": 12.5}
+            ```
+
+            Use with curl:
+            ```
+            curl -N -X POST http://localhost:8000/flows/MyFlow/execute/stream \\
+              -H "Content-Type: application/json" \\
+              -d '{"inputs": {...}}'
+            ```
+            """
+            if flow_name != self.flow_name:
+                raise HTTPException(status_code=404, detail=f"Flow not found: {flow_name}")
+
+            # Pre-flight check: verify all tasks are implemented
+            status = self.registry.get_implementation_status()
+            if status['unimplemented_count'] > 0:
+                pending_tasks = status['unimplemented_tasks']
+                progress = f"{status['implemented']}/{status['total']} ({status['percentage']:.1f}%)"
+
+                # Return error as SSE event
+                async def error_stream():
+                    error_event = {
+                        'success': False,
+                        'error': 'Flow not ready for execution',
+                        'error_details': f"{status['unimplemented_count']} of {status['total']} tasks are not yet implemented",
+                        'flow': flow_name,
+                        'pending_tasks': pending_tasks,
+                        'implementation_progress': progress
+                    }
+                    yield f"event: error\ndata: {json.dumps(error_event)}\n\n"
+
+                return StreamingResponse(
+                    error_stream(),
+                    media_type="text/event-stream",
+                    status_code=503
+                )
+
+            # Create event stream
+            async def event_stream():
+                # Queue to collect events
+                event_queue = asyncio.Queue()
+
+                # Event callback that puts events in the queue
+                async def event_callback(event_type: str, event_data: Dict[str, Any]):
+                    await event_queue.put((event_type, event_data))
+
+                # Task to execute the flow
+                async def execute_task():
+                    try:
+                        # Convert request inputs to dict
+                        if hasattr(request, 'inputs'):
+                            inputs_dict = request.inputs.model_dump(exclude_none=False)
+                        else:
+                            inputs_dict = request.dict().get('inputs', {})
+
+                        # Execute the flow with event callback
+                        result = await self.executor.execute_flow(
+                            self.flow_yaml,
+                            inputs=inputs_dict,
+                            event_callback=event_callback
+                        )
+
+                        # Put final result in queue (not already sent via events)
+                        # This signals completion
+                        await event_queue.put(('_done', result))
+
+                    except Exception as e:
+                        # Put error in queue
+                        await event_queue.put(('_error', {
+                            'error': str(e),
+                            'error_type': type(e).__name__,
+                            'error_details': traceback.format_exc()
+                        }))
+
+                # Start execution task
+                execution_task = asyncio.create_task(execute_task())
+
+                # Stream events as they arrive
+                try:
+                    while True:
+                        event_type, event_data = await event_queue.get()
+
+                        # Check for completion signals
+                        if event_type == '_done':
+                            # Execution completed - flow_completed event was already sent
+                            break
+                        elif event_type == '_error':
+                            # Execution failed with unexpected error
+                            yield f"event: error\ndata: {json.dumps(event_data)}\n\n"
+                            break
+                        else:
+                            # Regular event - send to client
+                            yield f"event: {event_type}\ndata: {json.dumps(event_data)}\n\n"
+
+                except asyncio.CancelledError:
+                    # Client disconnected - cancel execution
+                    execution_task.cancel()
+                    raise
+
+            return StreamingResponse(
+                event_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",  # Disable buffering in nginx
+                }
+            )
 
         @self.app.get("/flows/{flow_name}/tasks", tags=["Tasks"])
         async def list_tasks(flow_name: str):
@@ -651,19 +809,49 @@ class MultiFlowServer:
 
         @self.app.get("/", tags=["Info"])
         async def root():
-            """API root - returns basic information"""
+            """API root - returns basic information and available endpoints"""
+            # Get readiness status
+            flow_statuses = {}
+            all_ready = True
+            for flow_name, flow_data in self.flows.items():
+                status = flow_data['registry'].get_implementation_status()
+                flow_ready = status['unimplemented_count'] == 0
+                all_ready = all_ready and flow_ready
+                flow_statuses[flow_name] = {
+                    "ready": flow_ready,
+                    "progress": status['progress'],
+                    "percentage": f"{status['percentage']:.1f}%"
+                }
+
             return {
                 "service": "FlowLang Multi-Flow API Server",
                 "version": self.app.version,
-                "flows_loaded": len(self.flows),
-                "flows": list(self.flows.keys()),
-                "docs": "/docs",
+                "status": "ready" if all_ready else "incomplete",
+                "flows": {
+                    "count": len(self.flows),
+                    "names": list(self.flows.keys()),
+                    "status": flow_statuses
+                },
+                "documentation": {
+                    "openapi": "/docs",
+                    "redoc": "/redoc",
+                    "openapi_json": "/openapi.json"
+                },
                 "endpoints": {
-                    "health": "/health",
-                    "list_flows": "/flows",
-                    "flow_info": "/flows/{flow_name}",
-                    "execute": "/flows/{flow_name}/execute",
-                    "tasks": "/flows/{flow_name}/tasks"
+                    "info": {
+                        "root": "/",
+                        "health": "/health"
+                    },
+                    "flows": {
+                        "list": "/flows",
+                        "info": "/flows/{flow_name}",
+                        "tasks": "/flows/{flow_name}/tasks",
+                        "visualize": "/flows/{flow_name}/visualize"
+                    },
+                    "execution": {
+                        "execute": "/flows/{flow_name}/execute",
+                        "stream": "/flows/{flow_name}/execute/stream"
+                    }
                 }
             }
 
@@ -867,6 +1055,140 @@ class MultiFlowServer:
                     execution_time_ms=execution_time,
                     flow=flow_name
                 )
+
+        @self.app.post(
+            "/flows/{flow_name}/execute/stream",
+            tags=["Execution"],
+            responses={
+                200: {"description": "Flow execution events stream"},
+                404: {"description": "Flow not found"},
+                503: {"description": "Flow not ready - tasks not yet implemented"}
+            }
+        )
+        async def execute_flow_stream(flow_name: str, request: FlowExecuteRequest):
+            """
+            Execute a flow and stream execution events in real-time using Server-Sent Events (SSE).
+
+            Each event includes:
+            - event: Event type (flow_started, step_started, step_completed, step_failed, flow_completed, flow_failed)
+            - data: Event data as JSON
+
+            Example event format:
+            ```
+            event: step_started
+            data: {"step_id": "validate", "task": "ValidateUser", "timestamp": "2025-10-11T..."}
+
+            event: step_completed
+            data: {"step_id": "validate", "task": "ValidateUser", "outputs": {...}, "duration_ms": 12.5}
+            ```
+
+            Use with curl:
+            ```
+            curl -N -X POST http://localhost:8000/flows/MyFlow/execute/stream \\
+              -H "Content-Type: application/json" \\
+              -d '{"inputs": {...}}'
+            ```
+            """
+            if flow_name not in self.flows:
+                available = ', '.join(self.flows.keys())
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Flow not found: {flow_name}. Available flows: {available}"
+                )
+
+            flow_data = self.flows[flow_name]
+            registry = flow_data['registry']
+            executor = flow_data['executor']
+            flow_yaml = flow_data['flow_yaml']
+
+            # Pre-flight check: verify all tasks are implemented
+            status = registry.get_implementation_status()
+            if status['unimplemented_count'] > 0:
+                pending_tasks = status['unimplemented_tasks']
+                progress = f"{status['implemented']}/{status['total']} ({status['percentage']:.1f}%)"
+
+                # Return error as SSE event
+                async def error_stream():
+                    error_event = {
+                        'success': False,
+                        'error': 'Flow not ready for execution',
+                        'error_details': f"{status['unimplemented_count']} of {status['total']} tasks are not yet implemented",
+                        'flow': flow_name,
+                        'pending_tasks': pending_tasks,
+                        'implementation_progress': progress
+                    }
+                    yield f"event: error\ndata: {json.dumps(error_event)}\n\n"
+
+                return StreamingResponse(
+                    error_stream(),
+                    media_type="text/event-stream",
+                    status_code=503
+                )
+
+            # Create event stream
+            async def event_stream():
+                # Queue to collect events
+                event_queue = asyncio.Queue()
+
+                # Event callback that puts events in the queue
+                async def event_callback(event_type: str, event_data: Dict[str, Any]):
+                    await event_queue.put((event_type, event_data))
+
+                # Task to execute the flow
+                async def execute_task():
+                    try:
+                        # Execute the flow with event callback
+                        result = await executor.execute_flow(
+                            flow_yaml,
+                            inputs=request.inputs,
+                            event_callback=event_callback
+                        )
+
+                        # Put final result in queue (not already sent via events)
+                        # This signals completion
+                        await event_queue.put(('_done', result))
+
+                    except Exception as e:
+                        # Put error in queue
+                        await event_queue.put(('_error', {
+                            'error': str(e),
+                            'error_type': type(e).__name__,
+                            'error_details': traceback.format_exc()
+                        }))
+
+                # Start execution task
+                execution_task = asyncio.create_task(execute_task())
+
+                # Stream events as they arrive
+                try:
+                    while True:
+                        event_type, event_data = await event_queue.get()
+
+                        # Check for completion signals
+                        if event_type == '_done':
+                            # Execution completed - flow_completed event was already sent
+                            break
+                        elif event_type == '_error':
+                            # Execution failed with unexpected error
+                            yield f"event: error\ndata: {json.dumps(event_data)}\n\n"
+                            break
+                        else:
+                            # Regular event - send to client
+                            yield f"event: {event_type}\ndata: {json.dumps(event_data)}\n\n"
+
+                except asyncio.CancelledError:
+                    # Client disconnected - cancel execution
+                    execution_task.cancel()
+                    raise
+
+            return StreamingResponse(
+                event_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",  # Disable buffering in nginx
+                }
+            )
 
         @self.app.get("/flows/{flow_name}/tasks", tags=["Tasks"])
         async def list_tasks(flow_name: str):

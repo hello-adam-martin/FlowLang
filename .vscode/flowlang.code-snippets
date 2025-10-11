@@ -81,6 +81,44 @@
     ],
     "description": "If/then/else conditional block"
   },
+  "Switch/Case": {
+    "prefix": "switch",
+    "body": [
+      "- switch: \\${${1:variable}}",
+      "  cases:",
+      "    - when: ${2:value1}",
+      "      do:",
+      "        - task: ${3:HandleValue1}",
+      "          id: ${4:case1}",
+      "    - when: ${5:value2}",
+      "      do:",
+      "        - task: ${6:HandleValue2}",
+      "          id: ${7:case2}",
+      "    - default:",
+      "        - task: ${8:HandleDefault}",
+      "          id: ${9:default_case}"
+    ],
+    "description": "Multi-way switch/case branching"
+  },
+  "Switch Case (single)": {
+    "prefix": "case",
+    "body": [
+      "- when: ${1:value}",
+      "  do:",
+      "    - task: ${2:TaskName}",
+      "      id: ${3:step_id}"
+    ],
+    "description": "Single case for switch statement"
+  },
+  "Switch Default Case": {
+    "prefix": "default",
+    "body": [
+      "- default:",
+      "    - task: ${1:DefaultTask}",
+      "      id: ${2:default_step}"
+    ],
+    "description": "Default case for switch statement"
+  },
   "For Each Loop": {
     "prefix": "foreach",
     "body": [

@@ -29,11 +29,12 @@ class TaskInfo:
 class FlowScaffolder:
     """Generates task stubs, tests, and documentation from flow definitions"""
 
-    def __init__(self, output_dir: str = ".", force: bool = False):
+    def __init__(self, output_dir: str = ".", force: bool = False, quiet: bool = False):
         self.output_dir = Path(output_dir)
         self.tasks: Dict[str, TaskInfo] = {}
         self.flow_name = "UnnamedFlow"
         self.force = force  # If True, skip merge and overwrite everything
+        self.quiet = quiet  # If True, suppress verbose output
         self.merge_summary = {
             'tasks_preserved': 0,
             'tasks_added': 0,
@@ -42,6 +43,11 @@ class FlowScaffolder:
             'tests_added': 0,
             'tests_updated': 0,
         }
+
+    def _print(self, *args, **kwargs):
+        """Print only if not in quiet mode"""
+        if not self.quiet:
+            print(*args, **kwargs)
 
     def analyze_flow(self, flow_yaml: str) -> Dict[str, TaskInfo]:
         """
@@ -102,6 +108,17 @@ class FlowScaffolder:
                 if 'else' in condition:
                     self._extract_tasks_from_steps(condition['else'], depth + 1)
 
+            # Switch/case steps
+            elif 'switch' in step:
+                cases = step.get('cases', [])
+                for case in cases:
+                    # Extract from 'do' steps in each case
+                    if 'do' in case:
+                        self._extract_tasks_from_steps(case['do'], depth + 1)
+                    # Extract from 'default' case
+                    if 'default' in case:
+                        self._extract_tasks_from_steps(case['default'], depth + 1)
+
             # Loop steps (both 'loop' and 'for_each' syntax)
             elif 'loop' in step or 'for_each' in step:
                 loop = step.get('loop', step)
@@ -128,7 +145,8 @@ class FlowScaffolder:
             print(f"  ℹ️  Existing file found - using smart merge to preserve implementations")
 
             # Create backup on first merge
-            backup_path = output_path.parent / f"{filename}.backup"
+            # Use output_path.name to get just the filename without directory path
+            backup_path = output_path.parent / f"{output_path.name}.backup"
             if not backup_path.exists():
                 shutil.copy(output_path, backup_path)
                 print(f"  💾 Created backup: {backup_path}")
@@ -490,6 +508,20 @@ class FlowScaffolder:
         # Insert underscore before uppercase letters preceded by lowercase
         return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
+    def _to_pascal_case(self, name: str) -> str:
+        """Convert snake_case or kebab-case to PascalCase
+
+        Examples:
+            test -> Test
+            example_name -> ExampleName
+            user-auth -> UserAuth
+            my_flow_name -> MyFlowName
+        """
+        # Split on underscores or hyphens
+        words = name.replace('-', '_').split('_')
+        # Capitalize first letter of each word
+        return ''.join(word.capitalize() for word in words if word)
+
     def generate_tests(self, filename: str = "test_tasks.py") -> str:
         """
         Generate test file for all tasks, preserving implemented tests.
@@ -510,7 +542,8 @@ class FlowScaffolder:
             print(f"  ℹ️  Existing test file found - using smart merge to preserve implemented tests")
 
             # Create backup on first merge
-            backup_path = output_path.parent / f"{filename}.backup"
+            # Use output_path.name to get just the filename without directory path
+            backup_path = output_path.parent / f"{output_path.name}.backup"
             if not backup_path.exists():
                 shutil.copy(output_path, backup_path)
                 print(f"  💾 Created backup: {backup_path}")
@@ -867,16 +900,20 @@ This project contains a flow definition and scaffolded task implementations. All
 
 ```
 .
-├── flow.yaml           # Flow definition (your design)
+├── flow.yaml           # Flow definition (copy from source YAML)
 ├── flow.py             # Task implementations (TODO: implement these)
 ├── api.py              # FastAPI app export
 ├── README.md           # This file
 ├── tools/              # Scripts and utilities
-│   ├── generate.sh     # Smart scaffold/update
 │   └── start_server.sh # Start API server
 └── tests/              # Test files
     └── test_tasks.py   # Unit tests for tasks
 ```
+
+**Note**: This project was generated from a source YAML template. To regenerate or update:
+- Edit the source YAML file (e.g., `flows/your_flow.yaml`)
+- Run: `python -m flowlang.scaffolder auto flows/your_flow.yaml`
+- Or from project root: `./generate_flows.sh` (processes all flows)
 
 ## Implementation Status
 
@@ -1085,65 +1122,6 @@ app = server.app
 
         print(f"\n🔧 Generating tools directory: {tools_dir}")
 
-        # Generate generate.sh script
-        generate_sh_content = '''#!/bin/bash
-# Smart generator - automatically detects whether to scaffold or update
-# Usage: ./generate.sh (run from tools/ directory)
-
-set -e
-
-# Move to project root (parent of tools/)
-cd "$(dirname "$0")/.."
-
-FLOW_FILE="flow.yaml"
-OUTPUT_DIR="."
-
-# Activate virtual environment if it exists
-# Check common locations: ../../myenv (FlowLang root), ../myenv, ./myenv
-if [ -d "../../myenv" ]; then
-    source ../../myenv/bin/activate
-elif [ -d "../myenv" ]; then
-    source ../myenv/bin/activate
-elif [ -d "myenv" ]; then
-    source myenv/bin/activate
-fi
-
-# Check if flow.yaml exists
-if [ ! -f "$FLOW_FILE" ]; then
-    echo "❌ Error: flow.yaml not found in project root"
-    exit 1
-fi
-
-# Check if this is an existing project by looking for flow.py
-if [ -f "flow.py" ]; then
-    echo "📦 Existing project detected"
-    echo "🔄 Running UPDATE to preserve your implementations..."
-    echo ""
-    python -m flowlang.scaffolder update "$FLOW_FILE" -o "$OUTPUT_DIR"
-    echo ""
-    echo "✅ Update complete! Your implementations have been preserved."
-else
-    echo "🆕 New project detected"
-    echo "🏗️  Running SCAFFOLD to create initial structure..."
-    echo ""
-    python -m flowlang.scaffolder scaffold "$FLOW_FILE" -o "$OUTPUT_DIR"
-    echo ""
-    echo "✅ Scaffold complete! Start implementing tasks in flow.py"
-fi
-
-echo ""
-echo "📝 Next steps:"
-echo "   - Check flow.py for task stubs to implement"
-echo "   - Run: ./tools/start_server.sh"
-echo "   - Visit: http://localhost:8000/docs"
-'''
-
-        generate_sh_path = tools_dir / "generate.sh"
-        with open(generate_sh_path, 'w') as f:
-            f.write(generate_sh_content)
-        generate_sh_path.chmod(0o755)  # Make executable
-        print(f"  ✓ Generated generate.sh (executable)")
-
         # Generate start_server.sh script
         start_server_sh_content = f'''#!/bin/bash
 # Start {self.flow_name} API Server
@@ -1205,7 +1183,7 @@ fi
         start_server_sh_path.chmod(0o755)  # Make executable
         print(f"  ✓ Generated start_server.sh (executable)")
 
-        print(f"✓ Generated tools directory with 2 scripts")
+        print(f"✓ Generated tools directory with 1 script")
         return str(tools_dir)
 
     def scaffold(self, flow_yaml: str, output_dir: str = None):
@@ -1344,6 +1322,181 @@ fi
 # CLI INTERFACE
 # ========================================================================
 
+def handle_auto(flow_file: str, quiet: bool = False) -> int:
+    """
+    Handle 'auto' command: convention-based scaffolding/updating.
+
+    Takes a flow file path like 'flows/login.yaml' and automatically:
+    - Reads the flow name from the YAML file (e.g., 'flow: UserAuth')
+    - Determines output directory as 'flows/UserAuth/' (using flow name, NOT filename)
+    - Scaffolds if project doesn't exist
+    - Updates if project already exists
+
+    Args:
+        flow_file: Path to flow YAML file (e.g., flows/user_auth.yaml with flow: UserAuth)
+        quiet: Suppress verbose output (default: False)
+
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    flow_path = Path(flow_file)
+
+    # Validate flow file exists
+    if not flow_path.exists():
+        print(f"❌ Error: Flow file not found: {flow_file}")
+        return 1
+
+    # Read flow YAML first to get the flow name
+    try:
+        with open(flow_path, 'r') as f:
+            flow_yaml = f.read()
+    except Exception as e:
+        print(f"❌ Error reading flow file: {e}")
+        return 1
+
+    # Extract flow name from YAML (this is the source of truth for directory name)
+    try:
+        flow_def = yaml.safe_load(flow_yaml)
+        flow_name = flow_def.get('flow', None)
+        if not flow_name:
+            print(f"❌ Error: Flow YAML must have a 'flow' field")
+            return 1
+    except Exception as e:
+        print(f"❌ Error parsing flow YAML: {e}")
+        return 1
+
+    # Extract directory from file path
+    # flows/login.yaml -> flows/
+    parent_dir = flow_path.parent
+
+    # Determine output directory using flow name from YAML
+    # flow: TestFlow -> flows/TestFlow/
+    # flow: UserAuth -> flows/UserAuth/
+    output_dir = parent_dir / flow_name
+
+    print(f"🤖 Auto mode: {flow_file} -> {output_dir}/")
+    print(f"   Flow name: {flow_name}")
+    print("="*60)
+
+    # Validate flow before scaffolding
+    print(f"\n🔍 Validating flow definition...")
+    from .validator import validate_flow
+    validation_result = validate_flow(flow_yaml)
+
+    # Show validation summary
+    if validation_result.errors:
+        print(f"   ❌ {len(validation_result.errors)} error(s) found")
+        for err in validation_result.errors:
+            print(f"      [{err.location}] {err.message}")
+
+    if validation_result.warnings:
+        print(f"   ⚠️  {len(validation_result.warnings)} warning(s) found")
+        for warn in validation_result.warnings:
+            print(f"      [{warn.location}] {warn.message}")
+
+    if not validation_result.errors and not validation_result.warnings:
+        print(f"   ✅ No issues found")
+
+    # Determine next action based on validation
+    if not validation_result.valid:
+        print(f"\n❌ Flow validation failed. Please fix errors before generating.")
+        print(f"\n💡 Run: python -m flowlang validate {flow_file}")
+        return 1
+
+    if validation_result.warnings:
+        print(f"\n⚠️  Warnings detected but continuing with generation...")
+
+    print()
+
+    # Check if project already exists
+    flow_py_path = output_dir / 'flow.py'
+
+    try:
+        scaffolder = FlowScaffolder(output_dir=str(output_dir), force=False)
+
+        if flow_py_path.exists():
+            # Project exists - update
+            print(f"📦 Existing project detected at {output_dir}")
+            print(f"🔄 Running UPDATE to preserve implementations...\n")
+            scaffolder.update(flow_yaml, str(output_dir))
+        else:
+            # New project - scaffold
+            print(f"🆕 New project detected")
+            print(f"🏗️  Running SCAFFOLD to create initial structure...\n")
+            scaffolder.scaffold(flow_yaml, str(output_dir))
+
+        return 0
+    except Exception as e:
+        print(f"❌ Error during auto operation: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def handle_auto_all(directory: str, pattern: str = '*.yaml') -> int:
+    """
+    Handle 'auto-all' command: batch process all flows in a directory.
+
+    Scans directory for YAML files matching pattern and runs 'auto' on each.
+
+    Args:
+        directory: Directory to scan (e.g., flows/)
+        pattern: Glob pattern to match files (default: *.yaml)
+
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    dir_path = Path(directory)
+
+    if not dir_path.exists():
+        print(f"❌ Error: Directory not found: {directory}")
+        return 1
+
+    if not dir_path.is_dir():
+        print(f"❌ Error: Not a directory: {directory}")
+        return 1
+
+    # Find all matching flow files
+    # Only look at files directly in the directory, not subdirectories
+    flow_files = [f for f in dir_path.glob(pattern) if f.is_file()]
+
+    if not flow_files:
+        print(f"⚠️  No flow files found matching pattern '{pattern}' in {directory}")
+        print(f"   Looking for: {dir_path / pattern}")
+        return 1
+
+    print(f"🔍 Found {len(flow_files)} flow file(s) in {directory}")
+    print("="*60)
+
+    success_count = 0
+    error_count = 0
+
+    for flow_file in sorted(flow_files):
+        print(f"\n{'='*60}")
+        print(f"Processing: {flow_file.name}")
+        print(f"{'='*60}")
+
+        result = handle_auto(str(flow_file))
+
+        if result == 0:
+            success_count += 1
+            print(f"✅ Successfully processed {flow_file.name}")
+        else:
+            error_count += 1
+            print(f"❌ Failed to process {flow_file.name}")
+
+    # Summary
+    print(f"\n{'='*60}")
+    print(f"📊 Batch Processing Summary")
+    print(f"{'='*60}")
+    print(f"Total files: {len(flow_files)}")
+    print(f"✅ Success: {success_count}")
+    print(f"❌ Errors: {error_count}")
+    print(f"{'='*60}")
+
+    return 0 if error_count == 0 else 1
+
+
 def main():
     """CLI for scaffolding and updating flows"""
     import argparse
@@ -1353,14 +1506,19 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Create a new project (scaffold)
+  # Convention-based: auto-scaffold/update from YAML location (RECOMMENDED)
+  python -m flowlang.scaffolder auto flows/login.yaml
+  # Creates or updates flows/login/ based on flows/login.yaml
+
+  # Batch process all flows in a directory
+  python -m flowlang.scaffolder auto-all flows/
+  # Processes all *.yaml files in flows/
+
+  # Create a new project (explicit scaffold)
   python -m flowlang.scaffolder scaffold my_flow.yaml -o ./my_project
 
-  # Update an existing project (smart merge)
+  # Update an existing project (explicit update with smart merge)
   python -m flowlang.scaffolder update my_flow.yaml -o ./my_project
-
-  # Quick scaffold to current directory
-  python -m flowlang.scaffolder scaffold flow.yaml -o .
 
 For more information, see: https://github.com/hello-adam-martin/FlowLang
         """
@@ -1403,18 +1561,49 @@ For more information, see: https://github.com/hello-adam-martin/FlowLang
         help='Output directory (default: current directory)'
     )
 
+    # Auto command (convention-based scaffolding/updating)
+    auto_parser = subparsers.add_parser(
+        'auto',
+        help='Automatically scaffold or update based on convention (flows/name.yaml -> flows/name/)'
+    )
+    auto_parser.add_argument(
+        'flow_file',
+        help='Path to flow YAML file (e.g., flows/login.yaml)'
+    )
+
+    # Auto-all command (batch processing)
+    auto_all_parser = subparsers.add_parser(
+        'auto-all',
+        help='Automatically scaffold or update all flows in a directory'
+    )
+    auto_all_parser.add_argument(
+        'directory',
+        help='Directory containing flow YAML files (e.g., flows/)'
+    )
+    auto_all_parser.add_argument(
+        '--pattern',
+        default='*.yaml',
+        help='Pattern to match flow files (default: *.yaml)'
+    )
+
     args = parser.parse_args()
 
     # Check if subcommand was provided
     if args.command is None:
         parser.print_help()
-        print("\n❌ Error: Please specify a command (scaffold or update)")
+        print("\n❌ Error: Please specify a command (scaffold, update, auto, or auto-all)")
         return 1
 
     # Extract arguments from subcommand
     command = args.command
-    flow_file = args.flow_file
-    output_dir = args.output
+
+    # Handle auto-all separately (batch processing)
+    if command == 'auto-all':
+        return handle_auto_all(args.directory, args.pattern)
+
+    # For other commands, extract flow_file
+    flow_file = args.flow_file if hasattr(args, 'flow_file') else None
+    output_dir = getattr(args, 'output', None)
     force = getattr(args, 'force', False)
 
     # Read flow file
@@ -1430,11 +1619,14 @@ For more information, see: https://github.com/hello-adam-martin/FlowLang
 
     # Execute command
     try:
-        scaffolder = FlowScaffolder(output_dir=output_dir, force=force)
-
-        if command == 'scaffold':
+        if command == 'auto':
+            # Convention-based: flows/name.yaml -> flows/name/
+            return handle_auto(flow_file)
+        elif command == 'scaffold':
+            scaffolder = FlowScaffolder(output_dir=output_dir, force=force)
             scaffolder.scaffold(flow_yaml, output_dir)
         elif command == 'update':
+            scaffolder = FlowScaffolder(output_dir=output_dir, force=force)
             scaffolder.update(flow_yaml, output_dir)
         else:
             print(f"❌ Unknown command: {command}")

@@ -1,11 +1,11 @@
 #!/bin/bash
-# Start TodoManager API Server
+# Start ExampleWorkflow API Server
 # Usage: ./start_server.sh [--reload]
 
 cd "$(dirname "$0")/.."  # Move to project root
 
 echo "========================================"
-echo "Starting TodoManager API Server..."
+echo "Starting ExampleWorkflow API Server..."
 echo "========================================"
 echo ""
 

@@ -1,11 +1,11 @@
 #!/bin/bash
-# Start TestScaffold API Server
+# Start UserAuth API Server
 # Usage: ./start_server.sh [--reload]
 
 cd "$(dirname "$0")/.."  # Move to project root
 
 echo "========================================"
-echo "Starting TestScaffold API Server..."
+echo "Starting UserAuth API Server..."
 echo "========================================"
 echo ""
 

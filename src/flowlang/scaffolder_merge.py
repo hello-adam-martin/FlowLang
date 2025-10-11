@@ -64,7 +64,15 @@ class CodeMerger:
                 decorators.append(decorator.id)
             elif isinstance(decorator, ast.Call):
                 if isinstance(decorator.func, ast.Attribute):
-                    decorators.append(f"{decorator.func.value.id}.{decorator.func.attr}")
+                    # Handle nested attributes like pytest.mark.asyncio
+                    parts = []
+                    current = decorator.func
+                    while isinstance(current, ast.Attribute):
+                        parts.insert(0, current.attr)
+                        current = current.value
+                    if isinstance(current, ast.Name):
+                        parts.insert(0, current.id)
+                    decorators.append('.'.join(parts))
                 elif isinstance(decorator.func, ast.Name):
                     decorators.append(decorator.func.id)
 

@@ -3,9 +3,10 @@ FlowExecutor - The main execution engine for FlowLang
 """
 import asyncio
 import yaml
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Callable, Awaitable
 import inspect
 import time
+from datetime import datetime, timezone
 
 from .context import FlowContext
 from .registry import TaskRegistry
@@ -22,7 +23,7 @@ class FlowExecutor:
 
     Handles:
     - Sequential and parallel execution
-    - Conditional branching (if/then/else)
+    - Conditional branching (if/then/else, switch/case)
     - Loops (for_each)
     - Error handling and retries
     - Variable resolution
@@ -37,11 +38,22 @@ class FlowExecutor:
             registry: TaskRegistry containing task implementations
         """
         self.registry = registry
+        self._event_callback: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
+        self._flow_start_time: float = 0.0
+        self._flow_silent: bool = False  # Flow-level silent flag
+
+    async def _emit_event(self, event_type: str, event_data: Dict[str, Any]):
+        """Emit an event if callback is configured"""
+        if self._event_callback:
+            # Add timestamp to all events
+            event_data['timestamp'] = datetime.now(timezone.utc).isoformat()
+            await self._event_callback(event_type, event_data)
 
     async def execute_flow(
         self,
         flow_yaml: Union[str, Dict],
-        inputs: Optional[Dict[str, Any]] = None
+        inputs: Optional[Dict[str, Any]] = None,
+        event_callback: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
     ) -> Dict[str, Any]:
         """
         Execute a flow from YAML definition.
@@ -49,6 +61,8 @@ class FlowExecutor:
         Args:
             flow_yaml: Either a YAML string or a parsed dictionary
             inputs: Input variables for the flow
+            event_callback: Optional async callback for execution events.
+                           Called with (event_type: str, event_data: dict)
 
         Returns:
             Dictionary containing:
@@ -56,6 +70,10 @@ class FlowExecutor:
             - outputs: Any outputs from the flow
             - error: Error message if failed
         """
+        # Store callback and start time
+        self._event_callback = event_callback
+        self._flow_start_time = time.time()
+
         # Parse YAML if needed
         if isinstance(flow_yaml, str):
             flow_def = yaml.safe_load(flow_yaml)
@@ -64,6 +82,17 @@ class FlowExecutor:
 
         # Validate flow definition
         self._validate_flow(flow_def)
+
+        # Store flow-level silent flag
+        self._flow_silent = flow_def.get('silent', False)
+
+        flow_name = flow_def.get('flow', 'UnnamedFlow')
+
+        # Emit flow_started event
+        await self._emit_event('flow_started', {
+            'flow': flow_name,
+            'inputs': inputs or {}
+        })
 
         # Create execution context
         context = FlowContext(inputs)
@@ -90,12 +119,31 @@ class FlowExecutor:
 
                     outputs[name] = context.resolve_value(source)
 
+            # Emit flow_completed event
+            execution_time_ms = (time.time() - self._flow_start_time) * 1000
+            await self._emit_event('flow_completed', {
+                'flow': flow_name,
+                'success': True,
+                'outputs': outputs,
+                'duration_ms': execution_time_ms
+            })
+
             return {
                 'success': True,
                 'outputs': outputs,
             }
 
         except Exception as e:
+            # Emit flow_failed event
+            execution_time_ms = (time.time() - self._flow_start_time) * 1000
+            await self._emit_event('flow_failed', {
+                'flow': flow_name,
+                'success': False,
+                'error': str(e),
+                'error_type': type(e).__name__,
+                'duration_ms': execution_time_ms
+            })
+
             return {
                 'success': False,
                 'error': str(e),
@@ -146,6 +194,8 @@ class FlowExecutor:
             await self._execute_parallel_step(step, context)
         elif 'if' in step:
             await self._execute_conditional_step(step, context)
+        elif 'switch' in step:
+            await self._execute_switch_step(step, context)
         elif 'for_each' in step:
             await self._execute_loop_step(step, context)
         elif 'subflow' in step:
@@ -185,6 +235,24 @@ class FlowExecutor:
         max_attempts = retry_config.get('max_attempts', 1)
         backoff = retry_config.get('backoff', 1)
 
+        # Check if events should be emitted for this step
+        # Task-level silent overrides flow-level silent
+        # If 'silent' is explicitly set at task level, use that value
+        # Otherwise, use flow-level silent setting
+        if 'silent' in step:
+            silent = step['silent']
+        else:
+            silent = self._flow_silent
+
+        # Emit step_started event (unless silent)
+        step_start_time = time.time()
+        if not silent:
+            await self._emit_event('step_started', {
+                'step_id': step_id,
+                'task': task_name,
+                'inputs': task_inputs
+            })
+
         # Execute with retries
         last_error = None
         for attempt in range(max_attempts):
@@ -201,6 +269,16 @@ class FlowExecutor:
                 if step.get('id'):
                     context.set_step_output(step_id, result)
 
+                # Emit step_completed event (unless silent)
+                if not silent:
+                    step_duration_ms = (time.time() - step_start_time) * 1000
+                    await self._emit_event('step_completed', {
+                        'step_id': step_id,
+                        'task': task_name,
+                        'outputs': result,
+                        'duration_ms': step_duration_ms
+                    })
+
                 # Success - break retry loop
                 return
 
@@ -213,6 +291,17 @@ class FlowExecutor:
                     wait_time = backoff * (2 ** attempt)
                     await asyncio.sleep(wait_time)
                 else:
+                    # Emit step_failed event (unless silent)
+                    if not silent:
+                        step_duration_ms = (time.time() - step_start_time) * 1000
+                        await self._emit_event('step_failed', {
+                            'step_id': step_id,
+                            'task': task_name,
+                            'error': str(e),
+                            'error_type': type(e).__name__,
+                            'duration_ms': step_duration_ms
+                        })
+
                     # Handle error or raise
                     if 'on_error' in step:
                         await self._execute_error_handler(
@@ -261,6 +350,69 @@ class FlowExecutor:
             if 'else' in step:
                 await self._execute_steps(step['else'], context)
 
+    async def _execute_switch_step(
+        self,
+        step: Dict,
+        context: FlowContext
+    ):
+        """
+        Execute multi-way switch/case branching.
+
+        Supports:
+        - switch: ${expression}
+          cases:
+            - when: value
+              do: [steps]
+            - when: [value1, value2]  # Multiple values
+              do: [steps]
+            - default:
+                [steps]
+        """
+        switch_expr = step['switch']
+
+        # Resolve the switch expression
+        switch_value = context.resolve_value(switch_expr)
+
+        # Get cases
+        cases = step.get('cases', [])
+
+        # Track if any case matched
+        matched = False
+
+        for case in cases:
+            # Handle default case
+            if 'default' in case:
+                # Execute default steps if no previous case matched
+                if not matched:
+                    await self._execute_steps(case['default'], context)
+                return
+
+            # Get the when condition(s)
+            when_value = case.get('when')
+
+            if when_value is None:
+                continue
+
+            # Resolve the when value
+            when_resolved = context.resolve_value(when_value)
+
+            # Support both single value and list of values
+            if isinstance(when_resolved, list):
+                # Multiple values - match any
+                case_matches = switch_value in when_resolved
+            else:
+                # Single value - direct comparison
+                case_matches = switch_value == when_resolved
+
+            # If case matches, execute its steps and stop
+            if case_matches:
+                do_steps = case.get('do', [])
+                await self._execute_steps(do_steps, context)
+                matched = True
+                break
+
+        # If no case matched and no default was provided, that's ok - do nothing
+
     def _evaluate_condition(
         self,
         condition: str,
@@ -277,28 +429,33 @@ class FlowExecutor:
         - ${var} >= value
         - ${var} <= value
         """
-        # Resolve variables in condition
-        resolved = context.resolve_value(condition)
-
-        # If it's a simple variable reference that resolved to a boolean
-        if isinstance(resolved, bool):
-            return resolved
-
-        # Parse comparison operators
+        # Parse comparison operators before resolving
         operators = ['==', '!=', '>=', '<=', '>', '<']
         for op in operators:
-            if op in str(resolved):
-                parts = str(resolved).split(op)
+            if op in condition:
+                parts = condition.split(op, 1)  # Split only on first occurrence
                 if len(parts) == 2:
-                    left = parts[0].strip()
-                    right = parts[1].strip()
+                    left_expr = parts[0].strip()
+                    right_expr = parts[1].strip()
 
-                    # Try to convert to numbers if possible
-                    try:
-                        left = float(left)
-                        right = float(right)
-                    except ValueError:
-                        pass
+                    # Resolve both sides
+                    left = context.resolve_value(left_expr)
+                    right = context.resolve_value(right_expr)
+
+                    # Convert string "true"/"false" to boolean
+                    if isinstance(right, str):
+                        if right.lower() == 'true':
+                            right = True
+                        elif right.lower() == 'false':
+                            right = False
+
+                    # Try to convert to numbers if possible (for numeric comparisons)
+                    if not isinstance(left, bool) and not isinstance(right, bool):
+                        try:
+                            left = float(left)
+                            right = float(right)
+                        except (ValueError, TypeError):
+                            pass
 
                     # Evaluate comparison
                     if op == '==':
@@ -313,6 +470,13 @@ class FlowExecutor:
                         return left >= right
                     elif op == '<=':
                         return left <= right
+
+        # If no operator found, resolve the whole condition
+        resolved = context.resolve_value(condition)
+
+        # If it's a simple variable reference that resolved to a boolean
+        if isinstance(resolved, bool):
+            return resolved
 
         # If we can't parse it, treat it as truthy
         return bool(resolved)
