@@ -1,11 +1,11 @@
 #!/bin/bash
-# Start ExampleWorkflow API Server
+# Start HelloWorld API Server
 # Usage: ./start_server.sh [--reload]
 
 cd "$(dirname "$0")/.."  # Move to project root
 
 echo "========================================"
-echo "Starting ExampleWorkflow API Server..."
+echo "Starting HelloWorld API Server..."
 echo "========================================"
 echo ""
 

@@ -14,6 +14,7 @@ from .exceptions import (
     FlowValidationError,
     FlowExecutionError,
     MaxRetriesExceededError,
+    FlowTerminationException,
 )
 
 
@@ -133,6 +134,29 @@ class FlowExecutor:
                 'outputs': outputs,
             }
 
+        except FlowTerminationException as e:
+            # Flow terminated intentionally via exit step
+            # This is NOT an error - it's a controlled termination
+            execution_time_ms = (time.time() - self._flow_start_time) * 1000
+
+            # The flow_terminated event was already emitted in _execute_exit_step()
+            # Now emit flow_completed with termination info
+            await self._emit_event('flow_completed', {
+                'flow': flow_name,
+                'success': True,
+                'terminated': True,
+                'termination_reason': e.reason,
+                'outputs': e.outputs,
+                'duration_ms': execution_time_ms
+            })
+
+            return {
+                'success': True,
+                'terminated': True,
+                'reason': e.reason,
+                'outputs': e.outputs,
+            }
+
         except Exception as e:
             # Emit flow_failed event
             execution_time_ms = (time.time() - self._flow_start_time) * 1000
@@ -200,6 +224,8 @@ class FlowExecutor:
             await self._execute_loop_step(step, context)
         elif 'subflow' in step:
             await self._execute_subflow_step(step, context)
+        elif 'exit' in step:
+            await self._execute_exit_step(step, context)
         else:
             raise FlowValidationError(
                 f"Unknown step type: {list(step.keys())}"
@@ -415,20 +441,24 @@ class FlowExecutor:
 
     def _evaluate_condition(
         self,
-        condition: str,
+        condition: Union[str, Dict],
         context: FlowContext
     ) -> bool:
         """
         Evaluate a condition expression.
 
         Supports:
-        - ${var} == value
-        - ${var} != value
-        - ${var} > value
-        - ${var} < value
-        - ${var} >= value
-        - ${var} <= value
+        - Simple comparisons: "${var} == value"
+        - Quantified conditions (dict):
+          - any: [conditions]  # True if any condition is true
+          - all: [conditions]  # True if all conditions are true
+          - none: [conditions] # True if no conditions are true
         """
+        # If condition is a dict, it's a quantified condition
+        if isinstance(condition, dict):
+            return self._evaluate_quantified_condition(condition, context)
+
+        # Otherwise, it's a string comparison (existing logic)
         # Parse comparison operators before resolving
         operators = ['==', '!=', '>=', '<=', '>', '<']
         for op in operators:
@@ -481,6 +511,67 @@ class FlowExecutor:
         # If we can't parse it, treat it as truthy
         return bool(resolved)
 
+    def _evaluate_quantified_condition(
+        self,
+        condition: Dict,
+        context: FlowContext
+    ) -> bool:
+        """
+        Evaluate quantified conditions (any/all/none).
+
+        Args:
+            condition: Dict with 'any', 'all', or 'none' key containing list of conditions
+            context: FlowContext for variable resolution
+
+        Returns:
+            Boolean result of quantified evaluation
+
+        Examples:
+            {'any': ["${x} > 5", "${y} == true"]}  # True if any is true
+            {'all': ["${x} > 5", "${y} == true"]}  # True if all are true
+            {'none': ["${x} > 5", "${y} == true"]} # True if none are true
+        """
+        # Check for 'any' quantifier
+        if 'any' in condition:
+            sub_conditions = condition['any']
+            if not isinstance(sub_conditions, list):
+                raise FlowValidationError("'any' must contain a list of conditions")
+
+            # Return True if ANY sub-condition is true
+            for sub_cond in sub_conditions:
+                if self._evaluate_condition(sub_cond, context):
+                    return True
+            return False
+
+        # Check for 'all' quantifier
+        elif 'all' in condition:
+            sub_conditions = condition['all']
+            if not isinstance(sub_conditions, list):
+                raise FlowValidationError("'all' must contain a list of conditions")
+
+            # Return True if ALL sub-conditions are true
+            for sub_cond in sub_conditions:
+                if not self._evaluate_condition(sub_cond, context):
+                    return False
+            return True
+
+        # Check for 'none' quantifier
+        elif 'none' in condition:
+            sub_conditions = condition['none']
+            if not isinstance(sub_conditions, list):
+                raise FlowValidationError("'none' must contain a list of conditions")
+
+            # Return True if NONE of the sub-conditions are true
+            for sub_cond in sub_conditions:
+                if self._evaluate_condition(sub_cond, context):
+                    return False
+            return True
+
+        else:
+            raise FlowValidationError(
+                f"Quantified condition must have 'any', 'all', or 'none' key. Got: {list(condition.keys())}"
+            )
+
     async def _execute_loop_step(
         self,
         step: Dict,
@@ -529,6 +620,47 @@ class FlowExecutor:
         raise NotImplementedError(
             "Subflow execution requires a flow loader to be implemented"
         )
+
+    async def _execute_exit_step(
+        self,
+        step: Dict,
+        context: FlowContext
+    ):
+        """
+        Execute an exit step to terminate flow execution.
+
+        Syntax:
+            - exit                              # Simple exit
+            - exit:                             # Exit with reason
+                reason: "Application rejected"
+            - exit:                             # Exit with outputs
+                outputs:
+                  status: "rejected"
+                  reason: "Ineligible"
+        """
+        # Extract reason and outputs
+        exit_config = step.get('exit', {})
+
+        # Handle both simple form (exit: true) and detailed form (exit: {...})
+        if isinstance(exit_config, dict):
+            reason = exit_config.get('reason')
+            outputs = exit_config.get('outputs', {})
+
+            # Resolve output values
+            if outputs:
+                outputs = context.resolve_value(outputs)
+        else:
+            reason = None
+            outputs = {}
+
+        # Emit termination event
+        await self._emit_event('flow_terminated', {
+            'reason': reason or "Exit step executed",
+            'outputs': outputs
+        })
+
+        # Raise FlowTerminationException to stop execution
+        raise FlowTerminationException(reason=reason, outputs=outputs)
 
     async def _execute_error_handler(
         self,

@@ -53,3 +53,16 @@ class TimeoutError(FlowExecutionError):
         super().__init__(
             f"Task '{task_name}' timed out after {timeout} seconds"
         )
+
+
+class FlowTerminationException(FlowLangError):
+    """
+    Raised when an 'exit' step is executed to terminate flow execution.
+
+    This is a control flow exception, not an error. It indicates intentional
+    early termination of the flow.
+    """
+    def __init__(self, reason: str = None, outputs: dict = None):
+        self.reason = reason or "Flow terminated by exit step"
+        self.outputs = outputs or {}
+        super().__init__(self.reason)

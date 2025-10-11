@@ -244,13 +244,60 @@ class FlowValidator:
                         f"{step_location}.inputs"
                     )
 
+            elif 'exit' in step:
+                # Validate exit step
+                self._validate_exit_step(step, available_vars, step_location)
+
+                # Check if there are any steps after the exit
+                if i < len(steps) - 1:
+                    self.warnings.append(ValidationError(
+                        severity='warning',
+                        message=f"Steps after 'exit' at {step_location} are unreachable and will never execute",
+                        location=f"{location}[{i+1}]",
+                        context="Consider removing unreachable steps or moving the exit step inside a conditional"
+                    ))
+
+                # Exit terminates execution, so stop checking subsequent steps
+                break
+
         return produced_vars
+
+    def _validate_exit_step(self, step: Dict, available_vars: Set[str], location: str):
+        """Validate exit step"""
+        exit_config = step.get('exit', {})
+
+        # Exit can be simple (exit: null) or detailed (exit: {...})
+        if isinstance(exit_config, dict):
+            # Validate reason if present
+            if 'reason' in exit_config:
+                reason = exit_config['reason']
+                if not isinstance(reason, str):
+                    # Could be a variable reference
+                    self._validate_variable_refs(reason, available_vars, f"{location}.reason")
+
+            # Validate outputs if present
+            if 'outputs' in exit_config:
+                outputs = exit_config['outputs']
+                if not isinstance(outputs, dict):
+                    self.errors.append(ValidationError(
+                        severity='error',
+                        message="Exit outputs must be a dictionary",
+                        location=f"{location}.outputs"
+                    ))
+                else:
+                    # Validate each output value
+                    self._validate_variable_refs(outputs, available_vars, f"{location}.outputs")
 
     def _validate_conditional(self, step: Dict, available_vars: Set[str], location: str):
         """Validate conditional step"""
         # Validate condition expression
         condition = step['if']
-        self._validate_variable_refs(condition, available_vars, f"{location}.if")
+
+        # Handle both string conditions and quantified conditions (dict)
+        if isinstance(condition, dict):
+            self._validate_quantified_condition(condition, available_vars, f"{location}.if")
+        else:
+            self._validate_variable_refs(condition, available_vars, f"{location}.if")
 
         # Validate 'then' branch
         if 'then' in step:
@@ -269,6 +316,58 @@ class FlowValidator:
                 f"{location}.else"
             )
             # Don't add else_vars to available_vars as they're conditional
+
+    def _validate_quantified_condition(self, condition: Dict, available_vars: Set[str], location: str):
+        """Validate quantified condition (any/all/none)"""
+        # Check if it's a valid quantified condition
+        quantifiers = ['any', 'all', 'none']
+        found_quantifiers = [q for q in quantifiers if q in condition]
+
+        if not found_quantifiers:
+            self.errors.append(ValidationError(
+                severity='error',
+                message=f"Quantified condition must have 'any', 'all', or 'none' key. Got: {list(condition.keys())}",
+                location=location
+            ))
+            return
+
+        if len(found_quantifiers) > 1:
+            self.errors.append(ValidationError(
+                severity='error',
+                message=f"Quantified condition can only have one of 'any', 'all', or 'none', found: {found_quantifiers}",
+                location=location
+            ))
+            return
+
+        # Validate the sub-conditions
+        quantifier = found_quantifiers[0]
+        sub_conditions = condition[quantifier]
+
+        if not isinstance(sub_conditions, list):
+            self.errors.append(ValidationError(
+                severity='error',
+                message=f"'{quantifier}' must contain a list of conditions",
+                location=location
+            ))
+            return
+
+        if not sub_conditions:
+            self.warnings.append(ValidationError(
+                severity='warning',
+                message=f"'{quantifier}' has an empty list of conditions",
+                location=location
+            ))
+            return
+
+        # Recursively validate each sub-condition
+        for i, sub_cond in enumerate(sub_conditions):
+            sub_location = f"{location}.{quantifier}[{i}]"
+
+            # Sub-conditions can themselves be quantified (nested) or simple strings
+            if isinstance(sub_cond, dict):
+                self._validate_quantified_condition(sub_cond, available_vars, sub_location)
+            else:
+                self._validate_variable_refs(sub_cond, available_vars, sub_location)
 
     def _validate_switch(self, step: Dict, available_vars: Set[str], location: str):
         """Validate switch/case step"""

@@ -61,6 +61,10 @@ All available snippets (type prefix + Tab):
 | `taskif` | Conditional task step |
 | `parallel` | Parallel execution |
 | `conditional` | If/then/else block |
+| `ifany` | Conditional with ANY quantifier |
+| `ifall` | Conditional with ALL quantifier |
+| `ifnone` | Conditional with NONE quantifier |
+| `ifnested` | Nested quantified conditionals |
 | `switch` | Multi-way switch/case branching |
 | `case` | Single case for switch statement |
 | `default` | Default case for switch statement |

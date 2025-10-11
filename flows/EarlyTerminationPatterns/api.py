@@ -1,5 +1,5 @@
 """
-ExampleWorkflow API - FastAPI app instance
+EarlyTerminationPatterns API - FastAPI app instance
 
 This module creates the FastAPI app that can be run with uvicorn directly:
     uvicorn api:app --host 0.0.0.0 --port 8000 --reload
@@ -17,7 +17,7 @@ from flowlang.server import FlowServer
 server = FlowServer(
     project_dir=".",
     tasks_file="flow.py",
-    title="ExampleWorkflow API",
+    title="EarlyTerminationPatterns API",
     version="1.0.0"
 )
 

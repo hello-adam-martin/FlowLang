@@ -149,8 +149,9 @@ FlowLang supports:
 
 - **Sequential execution**: Steps run one after another
 - **Parallel execution**: Run multiple steps concurrently
-- **Conditionals**: `if/then/else` logic and `switch/case` multi-way branching
+- **Conditionals**: `if/then/else` logic, quantified conditions (`any/all/none`), and `switch/case` multi-way branching
 - **Loops**: `for_each` over collections
+- **Early termination**: `exit` step for explicit flow termination
 - **Error handling**: Retries and fallback logic
 - **Variable resolution**: `${inputs.var}`, `${step.output}`
 
@@ -206,12 +207,12 @@ Serve multiple flows from a single API server:
 **Directory structure** (YAML-first pattern):
 ```
 flows/
-├── user_auth.yaml      # Source template (edit this)
-├── UserAuth/           # Auto-generated project (PascalCase)
+├── hello_world.yaml    # Source template (edit this)
+├── HelloWorld/         # Auto-generated project (PascalCase)
 │   ├── flow.yaml       # Copy of source (used by server)
 │   └── flow.py         # Task implementations
-├── todo_manager.yaml   # Source template (edit this)
-├── TodoManager/        # Auto-generated project (PascalCase)
+├── user_profile.yaml   # Source template (edit this)
+├── UserProfile/        # Auto-generated project (PascalCase)
 │   ├── flow.yaml       # Copy of source (used by server)
 │   └── flow.py         # Task implementations
 └── ...
@@ -226,16 +227,16 @@ python -m flowlang.scaffolder auto-all flows/
 **Start multi-flow server**:
 ```bash
 # Option 1: Using convenience script
-./start_multi_server.sh
+./scripts/start_multi_server.sh
 
 # Option 2: Direct Python command
 python -m flowlang.server --multi flows
 
 # With custom port
-./start_multi_server.sh --port 8080
+./scripts/start_multi_server.sh --port 8080
 
 # With auto-reload
-./start_multi_server.sh --reload
+./scripts/start_multi_server.sh --reload
 ```
 
 **Key API endpoints**:
@@ -329,25 +330,43 @@ FlowLang/
 │   ├── server.py           # REST API server
 │   ├── scaffolder.py       # Code generator
 │   └── exceptions.py       # Custom exceptions
-├── flows/                  # Example flow projects
-│   └── todo_project/       # TodoManager example
+├── flows/                  # Flow definitions and examples
+│   ├── hello_world.yaml        # Source YAML template
+│   ├── HelloWorld/             # Working example project
+│   ├── loan_approval_v2.yaml   # Pattern example: complex approval flow
+│   ├── exit_example.yaml       # Pattern example: exit step usage
+│   └── early_termination_pattern.yaml  # Pattern example: control flow
 ├── CLAUDE.md               # Development guide
 └── README.md               # This file
 ```
 
-## Example: TodoManager Flow
+## Example: HelloWorld Flow
 
-Check out `flows/todo_project/` for a complete example with:
-- User validation
-- CRUD operations
-- Conditional logic
-- Error handling
-- Full REST API
+Check out `flows/HelloWorld/` for a complete working example with:
+- Input validation
+- Conditional logic (if/then/else)
+- Multiple task types
+- Error handling patterns
+- Full REST API server
+- 100% test coverage
 
 Start it with:
 ```bash
-cd flows/todo_project
+cd flows/HelloWorld
 ./tools/start_server.sh
+```
+
+Then test it:
+```bash
+# Valid request
+curl -X POST http://localhost:8000/flows/HelloWorld/execute \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"user_name": "Alice"}}'
+
+# Invalid request (empty name)
+curl -X POST http://localhost:8000/flows/HelloWorld/execute \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"user_name": ""}}'
 ```
 
 ## Development Workflow
@@ -375,7 +394,7 @@ python -m flowlang.scaffolder auto flows/my_flow.yaml
 **Option 2: Batch regenerate all flows**
 ```bash
 # From project root - processes all flows in flows/
-./generate_flows.sh
+./scripts/generate_flows.sh
 ```
 
 Both methods intelligently:
@@ -445,16 +464,16 @@ Returns:
   "status": "ready",
   "flows": {
     "count": 2,
-    "names": ["UserAuth", "TodoManager"],
+    "names": ["HelloWorld", "UserProfile"],
     "status": {
-      "UserAuth": {
+      "HelloWorld": {
         "ready": true,
         "progress": "3/3",
         "percentage": "100.0%"
       },
-      "TodoManager": {
+      "UserProfile": {
         "ready": true,
-        "progress": "4/4",
+        "progress": "5/5",
         "percentage": "100.0%"
       }
     }
@@ -549,7 +568,7 @@ Returns aggregate status:
   },
   "flows": [
     {
-      "name": "UserAuth",
+      "name": "HelloWorld",
       "ready": true,
       "tasks_implemented": 3,
       "tasks_total": 3,
@@ -558,13 +577,13 @@ Returns aggregate status:
       "pending_task_names": []
     },
     {
-      "name": "TodoManager",
+      "name": "UserProfile",
       "ready": false,
-      "tasks_implemented": 2,
-      "tasks_total": 4,
+      "tasks_implemented": 3,
+      "tasks_total": 5,
       "tasks_pending": 2,
-      "progress": "2/4",
-      "pending_task_names": ["DeleteTodo", "UpdateTodo"]
+      "progress": "3/5",
+      "pending_task_names": ["UpdateProfile", "DeleteProfile"]
     }
   ]
 }
@@ -608,6 +627,82 @@ steps:
         id: orders
       - task: FetchPreferences
         id: prefs
+```
+
+### Conditional Logic (If/Then/Else)
+
+Basic conditionals:
+
+```yaml
+steps:
+  - task: CheckAge
+    id: age_check
+    outputs:
+      - age
+
+  - if: ${age_check.age} >= 18
+    then:
+      - task: GrantFullAccess
+    else:
+      - task: GrantLimitedAccess
+```
+
+### Quantified Conditionals (ANY/ALL/NONE)
+
+For complex conditional logic with multiple conditions:
+
+**ANY** - True if at least one condition is true:
+
+```yaml
+steps:
+  - if:
+      any:
+        - ${user.role} == "admin"
+        - ${user.role} == "moderator"
+        - ${resource.owner} == ${user.id}
+    then:
+      - task: GrantEditAccess
+```
+
+**ALL** - True if all conditions are true:
+
+```yaml
+steps:
+  - if:
+      all:
+        - ${user.verified} == true
+        - ${user.age} >= 18
+        - ${user.country} == "US"
+    then:
+      - task: AllowRegistration
+```
+
+**NONE** - True if no conditions are true:
+
+```yaml
+steps:
+  - if:
+      none:
+        - ${user.banned} == true
+        - ${user.suspended} == true
+        - ${resource.locked} == true
+    then:
+      - task: AllowAccess
+```
+
+**Nested quantifiers** - Combine quantifiers for complex logic:
+
+```yaml
+steps:
+  # User can access if verified AND (admin OR owner)
+  - if:
+      all:
+        - ${user.verified} == true
+        - any:
+            - ${user.role} == "admin"
+            - ${resource.owner} == ${user.id}
+    then:
+      - task: GrantAccess
 ```
 
 ### Multi-Way Branching (Switch/Case)
@@ -659,6 +754,91 @@ steps:
       - task: LogError
       - task: SendAlert
 ```
+
+### Early Termination with Exit
+
+Use the `exit` step to explicitly terminate flow execution early. This is useful for guard clauses and validation patterns:
+
+**Simple exit**:
+```yaml
+steps:
+  - task: ValidateInput
+    id: validation
+    outputs:
+      - is_valid
+
+  - if: ${validation.is_valid} == false
+    then:
+      - exit
+```
+
+**Exit with reason**:
+```yaml
+steps:
+  - task: FetchUser
+    id: user
+    outputs:
+      - found
+
+  - if: ${user.found} == false
+    then:
+      - exit:
+          reason: "User not found"
+```
+
+**Exit with outputs**:
+```yaml
+steps:
+  - task: CheckPermissions
+    id: perms
+    outputs:
+      - allowed
+
+  - if: ${perms.allowed} == false
+    then:
+      - exit:
+          reason: "Permission denied"
+          outputs:
+            status: "error"
+            error_code: "PERMISSION_DENIED"
+```
+
+**Guard clause pattern**:
+```yaml
+steps:
+  # Multiple guard clauses exit early if validation fails
+  - task: FetchUser
+    id: user
+    outputs:
+      - found
+      - active
+
+  - if: ${user.found} == false
+    then:
+      - exit:
+          reason: "User not found"
+          outputs:
+            status: "error"
+
+  - if: ${user.active} == false
+    then:
+      - exit:
+          reason: "User inactive"
+          outputs:
+            status: "inactive"
+
+  # Continue processing - only runs if all guards passed
+  - task: ProcessUser
+    id: result
+```
+
+**When flow is terminated via `exit`**:
+- Execution stops immediately
+- Flow returns `success: true` and `terminated: true`
+- Reason and outputs from exit step are included in response
+- Any flow outputs defined in YAML are NOT returned (use exit outputs instead)
+
+See `flows/exit_example.yaml` for more examples and [`docs/control-flow-patterns.md`](docs/control-flow-patterns.md) for best practices.
 
 ## Testing
 

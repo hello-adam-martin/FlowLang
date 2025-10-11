@@ -1,0 +1,135 @@
+flow: ExitExample
+description: |
+  Demonstrates the 'exit' step for early flow termination.
+  Shows different use cases and patterns for exiting flows.
+
+inputs:
+  - name: user_id
+    type: string
+    required: true
+    description: User identifier to validate
+
+  - name: skip_processing
+    type: boolean
+    required: false
+    description: If true, skip all processing
+
+steps:
+  # ========================================================================
+  # EXAMPLE 1: Simple Guard Clause with Exit
+  # Check if processing should be skipped entirely
+  # ========================================================================
+  - if: ${inputs.skip_processing} == true
+    then:
+      - exit:
+          reason: "Processing skipped by user request"
+          outputs:
+            status: "skipped"
+            message: "User requested to skip processing"
+
+  # If we get here, skip_processing was false - continue
+
+  # ========================================================================
+  # EXAMPLE 2: Validation with Exit on Failure
+  # Fetch user and exit if not found or inactive
+  # ========================================================================
+  - task: FetchUser
+    id: user
+    inputs:
+      user_id: ${inputs.user_id}
+    outputs:
+      - found
+      - active
+      - account_type
+
+  # Exit early if user not found
+  - if: ${user.found} == false
+    then:
+      - exit:
+          reason: "User not found"
+          outputs:
+            status: "error"
+            error_code: "USER_NOT_FOUND"
+            user_id: ${inputs.user_id}
+
+  # Exit early if user is inactive
+  - if: ${user.active} == false
+    then:
+      - exit:
+          reason: "User account is inactive"
+          outputs:
+            status: "inactive"
+            user_id: ${inputs.user_id}
+            account_type: ${user.account_type}
+
+  # ========================================================================
+  # EXAMPLE 3: Business Logic with Conditional Exit
+  # Check account type and exit for premium users (handled differently)
+  # ========================================================================
+  - if: ${user.account_type} == "premium"
+    then:
+      - task: LogPremiumAccess
+        id: premium_log
+        inputs:
+          user_id: ${inputs.user_id}
+
+      - exit:
+          reason: "Premium user - handled by dedicated service"
+          outputs:
+            status: "premium_redirect"
+            user_id: ${inputs.user_id}
+            redirect_service: "premium-handler"
+
+  # ========================================================================
+  # EXAMPLE 4: Normal Processing Path
+  # Only reached if all guard clauses passed
+  # ========================================================================
+  - task: ValidatePermissions
+    id: permissions
+    inputs:
+      user_id: ${inputs.user_id}
+    outputs:
+      - can_proceed
+      - permission_level
+
+  # Final guard - exit if permissions denied
+  - if: ${permissions.can_proceed} == false
+    then:
+      - exit:
+          reason: "Insufficient permissions"
+          outputs:
+            status: "permission_denied"
+            user_id: ${inputs.user_id}
+            permission_level: ${permissions.permission_level}
+
+  # If we've made it this far, proceed with main processing
+  - task: ProcessStandardUser
+    id: processing
+    inputs:
+      user_id: ${inputs.user_id}
+      permission_level: ${permissions.permission_level}
+    outputs:
+      - result
+      - processing_time
+
+  - task: LogSuccess
+    id: log
+    inputs:
+      user_id: ${inputs.user_id}
+      result: ${processing.result}
+
+  # ========================================================================
+  # EXAMPLE 5: Simple Exit (no reason or outputs)
+  # Just terminate flow execution
+  # ========================================================================
+  # Uncomment to see simple exit in action:
+  # - exit
+
+outputs:
+  - name: status
+    value: ${processing.result}
+    description: Processing result
+
+  - name: user_id
+    value: ${inputs.user_id}
+    description: User ID that was processed

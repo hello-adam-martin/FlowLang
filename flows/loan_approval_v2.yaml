@@ -1,0 +1,255 @@
+flow: LoanApprovalV2
+description: |
+  Automated loan approval with PROPER control flow - rejection stops processing.
+  This version uses a cleaner pattern where the main logic is nested inside
+  the initial screening check.
+
+inputs:
+  - name: applicant_id
+    type: string
+    required: true
+    description: Unique applicant identifier
+
+  - name: loan_amount
+    type: number
+    required: true
+    description: Requested loan amount
+
+  - name: loan_purpose
+    type: string
+    required: true
+    description: Purpose of loan (home, auto, business, personal)
+
+steps:
+  # Step 1: Fetch applicant's financial profile
+  - task: FetchApplicantProfile
+    id: profile
+    inputs:
+      applicant_id: ${inputs.applicant_id}
+    outputs:
+      - credit_score
+      - annual_income
+      - employment_years
+      - debt_to_income
+      - has_bankruptcy
+      - has_foreclosure
+
+  # Step 2: Fetch applicant's account history
+  - task: FetchAccountHistory
+    id: history
+    inputs:
+      applicant_id: ${inputs.applicant_id}
+    outputs:
+      - years_as_customer
+      - previous_loans
+      - late_payments
+      - current_balance
+
+  # Step 3: Calculate loan metrics
+  - task: CalculateLoanMetrics
+    id: metrics
+    inputs:
+      loan_amount: ${inputs.loan_amount}
+      annual_income: ${profile.annual_income}
+      debt_to_income: ${profile.debt_to_income}
+    outputs:
+      - loan_to_income_ratio
+      - monthly_payment
+      - affordable
+
+  # ========================================================================
+  # MAIN CONTROL FLOW: Pass screening OR reject immediately
+  # This pattern ensures rejected applications don't continue processing
+  # ========================================================================
+  - if:
+      none:
+        - ${profile.has_bankruptcy} == true
+        - ${profile.has_foreclosure} == true
+        - ${profile.credit_score} < 580
+        - ${history.late_payments} > 3
+    then:
+      # ====================================================================
+      # PASSED INITIAL SCREENING - Continue with approval logic
+      # ====================================================================
+
+      # Premium tier - all conditions excellent
+      - if:
+          all:
+            - ${profile.credit_score} >= 750
+            - ${profile.annual_income} >= 80000
+            - ${profile.employment_years} >= 3
+            - ${profile.debt_to_income} <= 0.30
+            - ${history.years_as_customer} >= 2
+            - ${history.late_payments} == 0
+            - ${metrics.affordable} == true
+        then:
+          - task: ApproveLoanPremium
+            id: approval
+            inputs:
+              applicant_id: ${inputs.applicant_id}
+              loan_amount: ${inputs.loan_amount}
+              interest_rate: 3.5
+              tier: "Premium"
+            outputs:
+              - approval_id
+              - terms
+
+          - task: SendApprovalLetter
+            id: notification
+            inputs:
+              applicant_id: ${inputs.applicant_id}
+              tier: "Premium"
+              terms: ${approval.terms}
+
+      # Standard tier - flexible criteria
+      - if:
+          any:
+            - ${profile.credit_score} >= 680
+            - ${profile.annual_income} >= 60000
+            - ${history.years_as_customer} >= 5
+        then:
+          - if:
+              all:
+                - ${profile.credit_score} >= 620
+                - ${metrics.affordable} == true
+                - ${profile.debt_to_income} <= 0.45
+            then:
+              - task: ApproveLoanStandard
+                id: approval
+                inputs:
+                  applicant_id: ${inputs.applicant_id}
+                  loan_amount: ${inputs.loan_amount}
+                  interest_rate: 5.5
+                  tier: "Standard"
+                outputs:
+                  - approval_id
+                  - terms
+
+              - task: SendApprovalLetter
+                id: notification
+                inputs:
+                  applicant_id: ${inputs.applicant_id}
+                  tier: "Standard"
+                  terms: ${approval.terms}
+
+      # Manual review - complex cases
+      - if:
+          any:
+            - all:
+                - ${profile.credit_score} >= 650
+                - any:
+                    - ${profile.debt_to_income} > 0.40
+                    - ${metrics.loan_to_income_ratio} > 0.40
+            - all:
+                - ${profile.credit_score} >= 600
+                - ${history.years_as_customer} >= 3
+                - ${profile.employment_years} >= 5
+        then:
+          - task: FlagForManualReview
+            id: review
+            inputs:
+              applicant_id: ${inputs.applicant_id}
+              loan_amount: ${inputs.loan_amount}
+            outputs:
+              - review_id
+
+          - task: NotifyUnderwriter
+            id: notification
+            inputs:
+              review_id: ${review.review_id}
+
+      # Record successful screening
+      - task: RecordDecision
+        id: final_decision
+        inputs:
+          applicant_id: ${inputs.applicant_id}
+          decision_type: "Screening passed - approval or review"
+          profile: ${profile}
+        outputs:
+          - decision_id
+          - status
+
+    else:
+      # ====================================================================
+      # FAILED INITIAL SCREENING - Reject and stop
+      # Demonstrates PARALLEL PROCESSING for rejection handling
+      # ====================================================================
+      - task: RejectLoan
+        id: rejection
+        inputs:
+          applicant_id: ${inputs.applicant_id}
+          reason: "Failed initial screening"
+          profile: ${profile}
+          history: ${history}
+        outputs:
+          - rejection_reason
+          - rejection_code
+
+      # Process rejection tasks in PARALLEL for efficiency
+      # All these tasks can run concurrently since they don't depend on each other
+      - parallel:
+          # Send rejection notice to applicant
+          - task: SendRejectionNotice
+            id: notification
+            inputs:
+              applicant_id: ${inputs.applicant_id}
+              reason: ${rejection.rejection_reason}
+              rejection_code: ${rejection.rejection_code}
+            outputs:
+              - notification_sent
+              - notification_id
+
+          # Log rejection for analytics
+          - task: LogRejection
+            id: rejection_log
+            inputs:
+              applicant_id: ${inputs.applicant_id}
+              reason: ${rejection.rejection_reason}
+              credit_score: ${profile.credit_score}
+              loan_amount: ${inputs.loan_amount}
+            outputs:
+              - log_id
+              - timestamp
+
+          # Update credit bureau
+          - task: ReportToCreditBureau
+            id: credit_report
+            inputs:
+              applicant_id: ${inputs.applicant_id}
+              inquiry_type: "loan_rejected"
+              loan_amount: ${inputs.loan_amount}
+            outputs:
+              - report_id
+
+          # Trigger follow-up campaign (credit improvement tips)
+          - task: ScheduleFollowUpCampaign
+            id: campaign
+            inputs:
+              applicant_id: ${inputs.applicant_id}
+              campaign_type: "credit_improvement"
+              rejection_code: ${rejection.rejection_code}
+            outputs:
+              - campaign_id
+
+      # After parallel tasks complete, record final decision
+      - task: RecordDecision
+        id: final_decision
+        inputs:
+          applicant_id: ${inputs.applicant_id}
+          decision_type: "Rejected"
+          reason: ${rejection.rejection_reason}
+          notification_id: ${notification.notification_id}
+          log_id: ${rejection_log.log_id}
+        outputs:
+          - decision_id
+          - status
+
+outputs:
+  - name: decision
+    value: ${final_decision.status}
+
+  - name: decision_id
+    value: ${final_decision.decision_id}
+
+  - name: credit_score
+    value: ${profile.credit_score}

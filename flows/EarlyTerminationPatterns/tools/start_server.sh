@@ -1,11 +1,11 @@
 #!/bin/bash
-# Start UserAuth API Server
+# Start EarlyTerminationPatterns API Server
 # Usage: ./start_server.sh [--reload]
 
 cd "$(dirname "$0")/.."  # Move to project root
 
 echo "========================================"
-echo "Starting UserAuth API Server..."
+echo "Starting EarlyTerminationPatterns API Server..."
 echo "========================================"
 echo ""
 

@@ -113,6 +113,7 @@ FlowLang/
    - `NotImplementedTaskError` - Task is a stub
    - `FlowExecutionError` - Runtime execution errors
    - `FlowValidationError` - Invalid flow definitions
+   - `FlowTerminationException` - Intentional flow termination via exit step (control flow, not an error)
 
 ### Flow Definition Format
 
@@ -146,8 +147,13 @@ outputs:
 - **Parallel execution**: `parallel: [step1, step2, ...]`
 - **Conditionals**:
   - Binary: `if:` condition, `then:` steps, `else:` steps
+  - Quantified: `if:` with `any:`, `all:`, or `none:` for complex multi-condition logic
   - Multi-way: `switch:` expression, `cases:` with `when:` and `do:`, `default:` fallback
 - **Loops**: `for_each:` items, `as:` item_var, `do:` steps
+- **Early termination**: `exit` step to terminate flow execution explicitly
+  - Simple form: `- exit`
+  - With reason: `- exit: {reason: "message"}`
+  - With outputs: `- exit: {reason: "message", outputs: {key: value}}`
 - **Error handling**: `retry:` config, `on_error:` handler steps
 - **Dependencies**: `depends_on:` [step_ids]
 - **Subflows**: `subflow:` flow_name (planned feature)
@@ -327,10 +333,15 @@ The following features are part of the FlowLang vision but not yet implemented:
 - Variable resolution is recursive - works on nested dicts and lists
 - Parallel execution uses `asyncio.gather()` - true concurrency
 - Error handlers receive error context in `context.metadata['last_error']`
-- Conditional evaluation supports basic comparisons (==, !=, <, >, <=, >=)
+- Conditional evaluation supports:
+  - Basic comparisons (==, !=, <, >, <=, >=)
+  - Quantified conditions (`any`, `all`, `none`) for complex multi-condition logic
+  - Nested quantifiers (e.g., `all` with nested `any`)
 - Switch/case supports single values or lists of values for matching
 - Switch cases are evaluated in order; first match wins (like switch in most languages)
 - Loop variables are temporarily added to `context.inputs` during iteration
+- Exit step uses `FlowTerminationException` for control flow - it's caught and returns success with termination info
+- Exit step is an escape hatch; structural nesting (see docs/control-flow-patterns.md) is the recommended pattern
 
 ## Git Workflow
 

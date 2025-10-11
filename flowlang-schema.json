@@ -94,7 +94,8 @@
         { "$ref": "#/definitions/taskStep" },
         { "$ref": "#/definitions/parallelStep" },
         { "$ref": "#/definitions/conditionalStep" },
-        { "$ref": "#/definitions/loopStep" }
+        { "$ref": "#/definitions/loopStep" },
+        { "$ref": "#/definitions/exitStep" }
       ]
     },
     "taskStep": {
@@ -235,6 +236,46 @@
           "type": "string",
           "description": "Optional identifier for this loop",
           "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      }
+    },
+    "exitStep": {
+      "type": "object",
+      "required": ["exit"],
+      "properties": {
+        "exit": {
+          "description": "Exit flow execution immediately",
+          "oneOf": [
+            {
+              "type": "null",
+              "description": "Simple exit with no reason or outputs"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "description": "Reason for flow termination"
+                },
+                "outputs": {
+                  "type": "object",
+                  "description": "Output values to return upon termination",
+                  "patternProperties": {
+                    "^[a-z][a-z0-9_]*$": {
+                      "oneOf": [
+                        { "type": "string" },
+                        { "type": "number" },
+                        { "type": "boolean" },
+                        { "type": "object" },
+                        { "type": "array" },
+                        { "type": "null" }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
         }
       }
     },

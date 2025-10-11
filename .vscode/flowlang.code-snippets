@@ -237,5 +237,104 @@
       "      id: ${12:error_handler}"
     ],
     "description": "Task with all available options"
+  },
+  "Conditional - ANY": {
+    "prefix": "ifany",
+    "body": [
+      "- if:",
+      "    any:",
+      "      - \\${${1:var1}} == ${2:value1}",
+      "      - \\${${3:var2}} == ${4:value2}",
+      "      - \\${${5:var3}} == ${6:value3}",
+      "  then:",
+      "    - task: ${7:TaskName}",
+      "      id: ${8:step_id}"
+    ],
+    "description": "Conditional with ANY quantifier (true if any condition is true)"
+  },
+  "Conditional - ALL": {
+    "prefix": "ifall",
+    "body": [
+      "- if:",
+      "    all:",
+      "      - \\${${1:var1}} == ${2:value1}",
+      "      - \\${${3:var2}} == ${4:value2}",
+      "      - \\${${5:var3}} == ${6:value3}",
+      "  then:",
+      "    - task: ${7:TaskName}",
+      "      id: ${8:step_id}"
+    ],
+    "description": "Conditional with ALL quantifier (true if all conditions are true)"
+  },
+  "Conditional - NONE": {
+    "prefix": "ifnone",
+    "body": [
+      "- if:",
+      "    none:",
+      "      - \\${${1:var1}} == ${2:value1}",
+      "      - \\${${3:var2}} == ${4:value2}",
+      "      - \\${${5:var3}} == ${6:value3}",
+      "  then:",
+      "    - task: ${7:TaskName}",
+      "      id: ${8:step_id}"
+    ],
+    "description": "Conditional with NONE quantifier (true if no conditions are true)"
+  },
+  "Nested Quantifiers": {
+    "prefix": "ifnested",
+    "body": [
+      "- if:",
+      "    all:",
+      "      - \\${${1:var1}} == ${2:value1}",
+      "      - any:",
+      "          - \\${${3:var2}} == ${4:value2}",
+          "          - \\${${5:var3}} == ${6:value3}",
+      "  then:",
+      "    - task: ${7:TaskName}",
+      "      id: ${8:step_id}"
+    ],
+    "description": "Nested quantified conditionals (ALL with nested ANY)"
+  },
+  "Exit - Simple": {
+    "prefix": "exit",
+    "body": [
+      "- exit"
+    ],
+    "description": "Exit flow execution immediately"
+  },
+  "Exit - With Reason": {
+    "prefix": "exitreason",
+    "body": [
+      "- exit:",
+      "    reason: ${1:Flow terminated early}"
+    ],
+    "description": "Exit with termination reason"
+  },
+  "Exit - With Outputs": {
+    "prefix": "exitoutputs",
+    "body": [
+      "- exit:",
+      "    reason: ${1:Flow terminated}",
+      "    outputs:",
+      "      ${2:status}: ${3:value}"
+    ],
+    "description": "Exit with reason and outputs"
+  },
+  "Guard Clause Pattern": {
+    "prefix": "guard",
+    "body": [
+      "# Guard clause - exit early if condition fails",
+      "- if: ${1:condition}",
+      "  then:",
+      "    - exit:",
+      "        reason: ${2:Validation failed}",
+      "        outputs:",
+      "          ${3:status}: ${4:rejected}",
+      "",
+      "# Continue processing if guard passed",
+      "- task: ${5:ContinueProcessing}",
+      "  id: ${6:step_id}"
+    ],
+    "description": "Guard clause pattern with early exit"
   }
 }
