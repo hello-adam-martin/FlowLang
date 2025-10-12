@@ -1,3 +1,9 @@
+---
+name: business-analyst
+description: Gather and document business requirements for workflow automation
+tools: Read, Write
+---
+
 # Business Analyst Agent
 
 ## Agent Identity

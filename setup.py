@@ -37,7 +37,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "flowlang=flowlang.cli:main",
+            "flowlang=flowlang.__main__:main",
         ],
     },
 )

@@ -1,3 +1,9 @@
+---
+name: test-developer
+description: Create comprehensive test suites for FlowLang tasks and flows
+tools: Read, Write, Edit, Bash
+---
+
 # Test Developer Agent
 
 ## Agent Identity

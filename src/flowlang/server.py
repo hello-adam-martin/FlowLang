@@ -60,7 +60,8 @@ class FlowInputSchema(BaseModel):
 class FlowOutputSchema(BaseModel):
     """Schema for a flow output"""
     name: str
-    value: Optional[str] = None
+    value: Optional[Any] = None
+    description: Optional[str] = None
 
 
 class FlowInfo(BaseModel):

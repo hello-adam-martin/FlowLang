@@ -1,3 +1,9 @@
+---
+name: task-implementer
+description: Implement FlowLang tasks in Python with production-ready code
+tools: Read, Write, Edit, Bash
+---
+
 # Task Implementer Agent
 
 ## Agent Identity

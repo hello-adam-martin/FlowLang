@@ -33,6 +33,8 @@ class FlowScaffolder:
         self.output_dir = Path(output_dir)
         self.tasks: Dict[str, TaskInfo] = {}
         self.flow_name = "UnnamedFlow"
+        self.flow_def = None  # Will store the flow definition for connection lookup
+        self.task_connections: Dict[str, str] = {}  # Map task_name -> connection_name
         self.force = force  # If True, skip merge and overwrite everything
         self.quiet = quiet  # If True, suppress verbose output
         self.merge_summary = {
@@ -61,6 +63,7 @@ class FlowScaffolder:
         """
         flow_def = yaml.safe_load(flow_yaml)
         self.flow_name = flow_def.get('flow', 'UnnamedFlow')
+        self.flow_def = flow_def  # Store for connection lookup
 
         print(f"📊 Analyzing flow: {self.flow_name}")
         print("="*60)
@@ -68,6 +71,10 @@ class FlowScaffolder:
         # Extract tasks from steps
         steps = flow_def.get('steps', [])
         self._extract_tasks_from_steps(steps)
+
+        # Extract tasks from flow-level on_cancel handler
+        if 'on_cancel' in flow_def:
+            self._extract_tasks_from_steps(flow_def['on_cancel'])
 
         print(f"\n✓ Found {len(self.tasks)} unique tasks")
         for task_name, task_info in sorted(self.tasks.items()):
@@ -84,6 +91,11 @@ class FlowScaffolder:
                 step_id = step.get('id', task_name)
                 inputs = set(step.get('inputs', {}).keys())
 
+                # Capture connection if specified
+                connection_name = step.get('connection')
+                if connection_name:
+                    self.task_connections[task_name] = connection_name
+
                 if task_name not in self.tasks:
                     self.tasks[task_name] = TaskInfo(
                         name=task_name,
@@ -95,6 +107,10 @@ class FlowScaffolder:
                     self.tasks[task_name].step_ids.append(step_id)
                     # Merge inputs (union of all inputs across uses)
                     self.tasks[task_name].inputs.update(inputs)
+
+                # Extract tasks from step-level on_error handler
+                if 'on_error' in step:
+                    self._extract_tasks_from_steps(step['on_error'], depth + 1)
 
             # Parallel steps
             elif 'parallel' in step:
@@ -441,6 +457,58 @@ class FlowScaffolder:
 
         return '\n'.join(lines)
 
+    def _get_connection_usage_example(self, task_name: str) -> Optional[str]:
+        """
+        Get usage example for connection used by this task.
+
+        Args:
+            task_name: Name of the task
+
+        Returns:
+            Usage example string from connection plugin, or None if no connection
+        """
+        # Check if task uses a connection
+        connection_name = self.task_connections.get(task_name)
+        if not connection_name:
+            return None
+
+        # Get connection definition from flow
+        if not self.flow_def or 'connections' not in self.flow_def:
+            return None
+
+        conn_def = self.flow_def['connections'].get(connection_name)
+        if not conn_def:
+            return None
+
+        conn_type = conn_def.get('type')
+        if not conn_type:
+            return None
+
+        # Try to load the connection plugin and get usage example
+        try:
+            # Import plugin registry
+            import sys
+            from pathlib import Path
+
+            # Add src to path if needed
+            src_path = Path(__file__).parent.parent
+            if str(src_path) not in sys.path:
+                sys.path.insert(0, str(src_path))
+
+            from flowlang.connections import plugin_registry
+
+            # Get the plugin from registry
+            plugin = plugin_registry.get(conn_type)
+
+            if plugin and hasattr(plugin, 'get_usage_example'):
+                return plugin.get_usage_example()
+
+        except Exception as e:
+            # Silently fail - not critical for scaffolding
+            print(f"  ⚠️  Could not load usage example for {conn_type} connection: {e}")
+
+        return None
+
     def _generate_task_stub(self, task_name: str, task_info: TaskInfo) -> List[str]:
         """Generate stub code for a single task"""
         # Determine if task should be async based on name patterns
@@ -453,9 +521,14 @@ class FlowScaffolder:
 
         async_prefix = 'async ' if is_async else ''
 
-        # Generate parameter list
-        if task_info.inputs:
-            params = ', '.join(sorted(task_info.inputs))
+        # Generate parameter list - include connection if task uses one
+        params_list = list(sorted(task_info.inputs))
+        connection_name = self.task_connections.get(task_name)
+        if connection_name:
+            params_list.append('connection=None')
+
+        if params_list:
+            params = ', '.join(params_list)
         else:
             params = '**kwargs'
 
@@ -476,10 +549,30 @@ class FlowScaffolder:
             f'        ',
         ]
 
+        # Add connection info if task uses a connection
+        if connection_name:
+            conn_type = None
+            if self.flow_def and 'connections' in self.flow_def:
+                conn_def = self.flow_def['connections'].get(connection_name)
+                if conn_def:
+                    conn_type = conn_def.get('type')
+
+            lines.append(f'        Connection: {connection_name} (type: {conn_type or "unknown"})')
+            lines.append(f'        ')
+
+            # Get usage example from plugin
+            usage_example = self._get_connection_usage_example(task_name)
+            if usage_example:
+                lines.append(f'        Connection Usage Example:')
+                lines.append(usage_example)
+                lines.append(f'        ')
+
         if task_info.inputs:
             lines.append(f'        Args:')
             for inp in sorted(task_info.inputs):
                 lines.append(f'            {inp}: TODO: Describe this parameter')
+            if connection_name:
+                lines.append(f'            connection: Connection object (injected by executor)')
             lines.append('        ')
 
         lines.extend([
@@ -1118,6 +1211,173 @@ app = server.app
         print(f"✓ Generated API file")
         return str(output_path)
 
+    def _extract_env_variables(self) -> Dict[str, Dict[str, str]]:
+        """
+        Extract environment variables from flow connections.
+
+        Returns:
+            Dict mapping env var names to their metadata (connection type, description)
+        """
+        env_vars = {}
+
+        if not self.flow_def or 'connections' not in self.flow_def:
+            return env_vars
+
+        connections = self.flow_def['connections']
+
+        for conn_name, conn_def in connections.items():
+            conn_type = conn_def.get('type', 'unknown')
+
+            # Extract all values that reference environment variables
+            for key, value in conn_def.items():
+                if isinstance(value, str) and value.startswith('${env.') and value.endswith('}'):
+                    # Extract env var name: ${env.VAR_NAME} -> VAR_NAME
+                    env_var_name = value[6:-1]  # Remove ${env. and }
+
+                    if env_var_name not in env_vars:
+                        env_vars[env_var_name] = {
+                            'connection': conn_name,
+                            'type': conn_type,
+                            'field': key,
+                            'example': f'your_{key.lower()}_here'
+                        }
+
+        return env_vars
+
+    def generate_env_example(self) -> str:
+        """
+        Generate .env.example file with environment variables from connections.
+
+        Returns:
+            Path to the generated file
+        """
+        output_path = self.output_dir / ".env.example"
+
+        env_vars = self._extract_env_variables()
+
+        if not env_vars:
+            # No environment variables needed
+            return None
+
+        print(f"\n📄 Generating .env.example: {output_path}")
+
+        lines = [
+            f"# Environment Variables for {self.flow_name}",
+            f"# Generated by FlowLang Scaffolder on {datetime.now().strftime('%Y-%m-%d')}",
+            "",
+            "# Copy this file to .env and fill in your actual values:",
+            "# cp .env.example .env",
+            "",
+        ]
+
+        # Group by connection type for better organization
+        connections_vars = {}
+        for var_name, var_info in sorted(env_vars.items()):
+            conn_name = var_info['connection']
+            if conn_name not in connections_vars:
+                connections_vars[conn_name] = []
+            connections_vars[conn_name].append((var_name, var_info))
+
+        # Generate sections for each connection
+        for conn_name, vars_list in sorted(connections_vars.items()):
+            conn_type = vars_list[0][1]['type']
+            lines.append(f"# {conn_name.title()} Connection ({conn_type})")
+
+            for var_name, var_info in vars_list:
+                field = var_info['field']
+                example = var_info['example']
+
+                # Add helpful comments based on field name
+                if 'api_key' in field.lower() or 'token' in field.lower():
+                    lines.append(f"# Get this from your {conn_type.title()} account settings")
+                elif 'base_id' in field.lower():
+                    lines.append(f"# Find this in your {conn_type.title()} base URL")
+                elif 'url' in field.lower():
+                    lines.append(f"# Connection URL for {conn_type}")
+
+                lines.append(f"{var_name}={example}")
+                lines.append("")
+
+            lines.append("")
+
+        # Add example section at the end
+        lines.extend([
+            "# Example values (replace with your actual values):",
+        ])
+
+        for var_name, var_info in sorted(env_vars.items()):
+            field = var_info['field']
+            if 'api_key' in field.lower():
+                lines.append(f"# {var_name}=sk_test_1234567890abcdefghijklmnopqrstuvwxyz")
+            elif 'base_id' in field.lower():
+                lines.append(f"# {var_name}=appABCDEFGHIJKLMN")
+            elif 'url' in field.lower() and 'postgres' in var_info['type'].lower():
+                lines.append(f"# {var_name}=postgresql://user:password@localhost:5432/dbname")
+            elif 'url' in field.lower() and 'mongodb' in var_info['type'].lower():
+                lines.append(f"# {var_name}=mongodb://localhost:27017/dbname")
+            elif 'url' in field.lower() and 'redis' in var_info['type'].lower():
+                lines.append(f"# {var_name}=redis://localhost:6379/0")
+
+        with open(output_path, 'w') as f:
+            f.write('\n'.join(lines))
+
+        print(f"✓ Generated .env.example with {len(env_vars)} environment variables")
+        return str(output_path)
+
+    def generate_gitignore(self) -> str:
+        """
+        Generate .gitignore file to exclude sensitive files.
+
+        Returns:
+            Path to the generated file
+        """
+        output_path = self.output_dir / ".gitignore"
+
+        print(f"\n📄 Generating .gitignore: {output_path}")
+
+        content = """# Environment variables (contains secrets)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+myenv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+*.backup
+"""
+
+        with open(output_path, 'w') as f:
+            f.write(content)
+
+        print(f"✓ Generated .gitignore")
+        return str(output_path)
+
     def generate_tools(self) -> str:
         """
         Generate tools/ directory with utility scripts.
@@ -1240,6 +1500,8 @@ fi
         self.generate_readme()
         self.generate_api()
         self.generate_tools()
+        self.generate_env_example()
+        self.generate_gitignore()
 
         print("\n" + "="*60)
         print("🎉 Scaffolding complete!")
@@ -1301,6 +1563,8 @@ fi
         self.generate_readme()  # Always regenerated
         self.generate_api()     # Always regenerated
         self.generate_tools()   # Always regenerated
+        self.generate_env_example()  # Always regenerated
+        self.generate_gitignore()    # Always regenerated
 
         print("\n" + "="*60)
         print("✅ Update complete!")

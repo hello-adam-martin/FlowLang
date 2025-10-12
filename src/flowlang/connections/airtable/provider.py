@@ -824,6 +824,58 @@ class AirtablePlugin(ConnectionPlugin):
                 f"Airtable batch {operation} failed: {e}"
             ) from e
 
+    def get_usage_example(self) -> str:
+        """
+        Return example code for using this connection in custom tasks.
+
+        Returns:
+            String containing example Python code
+        """
+        return '''
+    # Access connection components
+    session = connection['session']      # aiohttp.ClientSession (pre-authenticated)
+    base_id = connection['base_id']      # Your Airtable base ID
+    api_key = connection['api_key']      # Your API key (usually not needed)
+
+    # Example: Fetch records from a table
+    url = f"https://api.airtable.com/v0/{base_id}/TableName"
+    params = {
+        'filterByFormula': '{Status} = "Active"',
+        'maxRecords': 100,
+        'sort[0][field]': 'Name',
+        'sort[0][direction]': 'asc'
+    }
+
+    async with session.get(url, params=params) as response:
+        if response.status == 200:
+            data = await response.json()
+            records = data.get('records', [])
+        else:
+            text = await response.text()
+            raise Exception(f"Airtable API error ({response.status}): {text}")
+
+    # Example: Create a new record
+    url = f"https://api.airtable.com/v0/{base_id}/TableName"
+    payload = {
+        'fields': {
+            'Name': 'John Doe',
+            'Email': 'john@example.com',
+            'Active': True
+        }
+    }
+
+    async with session.post(url, json=payload) as response:
+        if response.status in (200, 201):
+            record = await response.json()
+            record_id = record.get('id')
+        else:
+            text = await response.text()
+            raise Exception(f"Airtable API error ({response.status}): {text}")
+
+    # Note: Session is already authenticated - don't create your own aiohttp session!
+    # Note: Don't read AIRTABLE_API_KEY from env - it's already in the connection!
+'''
+
     def get_dependencies(self) -> List[str]:
         """Return required pip packages"""
         return ["aiohttp>=3.8.0"]
