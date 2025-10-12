@@ -117,9 +117,9 @@ Phases 5-8 (Test, Implement, Develop, Deploy):
 
 ---
 
-## Phase 0: Project Setup with Flow Orchestrator
+## Phase 0: Project Setup
 
-Before gathering requirements or designing flows, we need a project structure. The **Flow Orchestrator agent** manages project initialization and organization.
+Before gathering requirements or designing flows, we need a project structure. Use the FlowLang CLI to initialize the project.
 
 ### Why Start with Project Setup?
 
@@ -129,19 +129,9 @@ Starting with project setup ensures:
 - Proper organization from day one
 - Team members know where to find everything
 
-### Step 1: Invoke the Flow Orchestrator Agent
+### Step 1: Create Parent Project
 
-In Claude Code, use a command like this:
-
-```
-Use the flow-orchestrator agent to create a new project in /flows
-for an order processing system. Set up the project structure with
-shared connections for PostgreSQL, Stripe, and SendGrid.
-```
-
-### Step 2: Create Parent Project
-
-The Flow Orchestrator executes these CLI commands:
+Use the FlowLang CLI to create the project:
 
 ```bash
 # Navigate to flows directory
@@ -160,7 +150,7 @@ This creates:
 └── project.yaml
 ```
 
-### Step 3: Review Generated Project Configuration
+### Step 2: Review Generated Project Configuration
 
 The generated `project.yaml`:
 
@@ -194,6 +184,10 @@ flows:
   # Flows will be added here as we create them
 ```
 
+### Step 3: Update Connections (Optional)
+
+You can manually edit `project.yaml` to configure shared connections for your environment. For this tutorial, the default configuration above works well.
+
 **Project structure at this point**:
 
 ```
@@ -202,6 +196,8 @@ flows:
 ```
 
 **Working Directory**: `/flows/order-system/` (all subsequent work happens here)
+
+**Note**: For simple project setup like this, you don't need the Flow Orchestrator agent - just use the CLI directly. Save agent invocation for more complex coordination tasks.
 
 ---
 
