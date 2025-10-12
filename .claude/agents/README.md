@@ -4,13 +4,14 @@ A collection of specialized Claude agents to assist with FlowLang workflow devel
 
 ## Overview
 
-The FlowLang agent suite provides five expert agents, each specializing in a specific aspect of flow development:
+The FlowLang agent suite provides six expert agents, each specializing in a specific aspect of flow development:
 
-1. **Business Process Designer** - Translates requirements into flow.yaml
-2. **YAML Flow Expert** - Validates and optimizes flow definitions
-3. **Test Developer** - Creates comprehensive test suites
-4. **Task Implementer** - Implements task functions in Python
-5. **Flow Orchestrator** - Coordinates end-to-end project lifecycle
+1. **Business Analyst** - Gathers requirements and clarifies business needs
+2. **Business Process Designer** - Translates requirements into flow.yaml
+3. **YAML Flow Expert** - Validates and optimizes flow definitions
+4. **Test Developer** - Creates comprehensive test suites
+5. **Task Implementer** - Implements task functions in Python
+6. **Flow Orchestrator** - Coordinates end-to-end project lifecycle
 
 ## Quick Start
 
@@ -19,6 +20,8 @@ The FlowLang agent suite provides five expert agents, each specializing in a spe
 When working with Claude Code, you can invoke specific agents by referencing them in your requests:
 
 ```
+"Use the business-analyst to understand my requirements"
+
 "Use the business-process-designer agent to design a flow for order processing"
 
 "Ask the yaml-flow-expert to validate and optimize my flow.yaml"
@@ -32,7 +35,43 @@ When working with Claude Code, you can invoke specific agents by referencing the
 
 ## Agent Details
 
-### 1. Business Process Designer
+### 1. Business Analyst
+
+**File**: `business-analyst.md`
+
+**Purpose**: Gather and clarify business requirements before technical design
+
+**When to Use**:
+- User has vague or high-level requirements
+- Need to understand business context
+- Unclear about process steps or decision logic
+- Want to document business rules
+- Need to identify stakeholders and integrations
+
+**Example Request**:
+```
+I want to automate our order processing, but I'm not sure exactly what needs to happen.
+Use the business-analyst to help me figure out the requirements.
+```
+
+**Deliverables**:
+- Complete requirements document
+- Business process map
+- Stakeholder identification
+- Business rules documentation
+- Data requirements
+- Success criteria
+- Ready for technical design
+
+**Key Characteristics**:
+- NO technical knowledge (doesn't know FlowLang, YAML, or coding)
+- Asks probing questions to clarify requirements
+- Documents in business terms, not technical terms
+- Output feeds directly to Business Process Designer
+
+---
+
+### 2. Business Process Designer
 
 **File**: `business-process-designer.md`
 
@@ -66,7 +105,7 @@ Use the business-process-designer to create the flow.yaml
 
 ---
 
-### 2. YAML Flow Expert
+### 3. YAML Flow Expert
 
 **File**: `yaml-flow-expert.md`
 
@@ -94,7 +133,7 @@ Use the yaml-flow-expert to optimize it for performance and clarity.
 
 ---
 
-### 3. Test Developer
+### 4. Test Developer
 
 **File**: `test-developer.md`
 
@@ -123,7 +162,7 @@ OrderProcessing flow with PostgreSQL and Redis connections.
 
 ---
 
-### 4. Task Implementer
+### 5. Task Implementer
 
 **File**: `task-implementer.md`
 
@@ -152,7 +191,7 @@ to implement the ProcessPayment, ValidateOrder, and CalculateTotal tasks.
 
 ---
 
-### 5. Flow Orchestrator
+### 6. Flow Orchestrator
 
 **File**: `flow-orchestrator.md`
 
@@ -188,27 +227,31 @@ and prepare it for production deployment with Docker.
 
 ```
 1. Requirements Gathering
-   └─> Business Process Designer
-       └─> Creates flow.yaml
+   └─> Business Analyst
+       └─> Creates requirements document
 
-2. Flow Validation
+2. Flow Design
+   └─> Business Process Designer
+       └─> Creates flow.yaml from requirements
+
+3. Flow Validation
    └─> YAML Flow Expert
        └─> Validates and optimizes flow.yaml
 
-3. Project Setup
+4. Project Setup
    └─> Flow Orchestrator
        └─> Runs scaffolder, creates project structure
 
-4. Test Creation
+5. Test Creation
    └─> Test Developer
        └─> Creates tests/test_tasks.py
 
-5. Task Implementation
+6. Task Implementation
    └─> Task Implementer
        └─> Implements tasks in flow.py
        └─> All tests passing
 
-6. Deployment
+7. Deployment
    └─> Flow Orchestrator
        └─> Deploys to production
 ```
@@ -273,7 +316,8 @@ Let's start..."
 
 The agents work together seamlessly:
 
-- **Business Process Designer** outputs flow.yaml
+- **Business Analyst** creates requirements document
+  → **Business Process Designer** designs flow.yaml from requirements
   → **YAML Flow Expert** validates and optimizes it
   → **Flow Orchestrator** scaffolds the project
   → **Task Implementer** implements tasks
@@ -293,6 +337,7 @@ Each agent has deep knowledge of FlowLang:
 
 ### 1. Use the Right Agent for the Job
 
+- **Requirements gathering** → Business Analyst
 - **Design questions** → Business Process Designer
 - **YAML issues** → YAML Flow Expert
 - **Testing needs** → Test Developer
@@ -302,10 +347,11 @@ Each agent has deep knowledge of FlowLang:
 ### 2. Follow the Workflow
 
 Work sequentially through the phases:
-Design → Validate → Scaffold → Test → Implement → Deploy
+Requirements → Design → Validate → Scaffold → Test → Implement → Deploy
 
 ### 3. Iterate with Agents
 
+- Gather requirements with Business Analyst
 - Design with Business Process Designer
 - Validate with YAML Flow Expert
 - Refine based on feedback
@@ -354,6 +400,12 @@ All agents have deep knowledge of:
 
 ## Getting Help
 
+### For Requirements Questions
+Ask the **Business Analyst**:
+- "Help me understand what I need"
+- "What questions should I answer before building this?"
+- "Document the business rules for this process"
+
 ### For Design Questions
 Ask the **Business Process Designer**:
 - "How should I structure this workflow?"
@@ -390,6 +442,7 @@ Ask the **Flow Orchestrator**:
 ```
 .claude/agents/
 ├── README.md                      # This file
+├── business-analyst.md            # Requirements gathering expert
 ├── business-process-designer.md   # Flow design expert
 ├── yaml-flow-expert.md            # YAML validation expert
 ├── test-developer.md              # Testing expert
@@ -415,6 +468,7 @@ When adding new FlowLang features, update the relevant agent files to include:
 
 | Need | Agent | Command Example |
 |------|-------|----------------|
+| Gather requirements | Business Analyst | "Help me understand what I need to build" |
 | Design flow | Business Process Designer | "Design a flow for order processing" |
 | Validate YAML | YAML Flow Expert | "Validate and optimize my flow.yaml" |
 | Create tests | Test Developer | "Create tests for all tasks" |
