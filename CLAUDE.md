@@ -45,6 +45,7 @@ FlowLang/
 │   ├── context.py         # FlowContext - manages execution state
 │   ├── registry.py        # TaskRegistry - task registration & management
 │   ├── server.py          # FlowServer - REST API server
+│   ├── project.py         # ProjectManager - project organization
 │   ├── scaffolder.py      # FlowScaffolder - code generation
 │   ├── scaffolder_merge.py # Smart merge for preserving implementations
 │   ├── templates.py       # TemplateManager - template system
@@ -191,6 +192,132 @@ The FlowContext resolves variables using the pattern `${path}`:
 - `${step_id.output}` - Output from a step
 - `${step_id.output.field}` - Nested field access
 - String interpolation: `"Hello ${inputs.name}!"`
+
+### Project-Based Organization
+
+**ProjectManager** (src/flowlang/project.py)
+
+FlowLang supports organizing related flows into projects with shared configuration:
+
+#### Project Structure
+
+```
+my-project/
+├── project.yaml          # Project metadata
+├── flow1/                # Individual flow directory
+│   ├── flow.yaml
+│   └── flow.py
+├── flow2/
+│   ├── flow.yaml
+│   └── flow.py
+└── flow3/
+    ├── flow.yaml
+    └── flow.py
+```
+
+#### project.yaml Format
+
+```yaml
+project: MyProject
+description: Collection of related workflows
+version: 1.0.0
+settings:
+  shared_connections:
+    postgres:
+      type: postgresql
+      host: ${DATABASE_HOST}
+      database: ${DATABASE_NAME}
+    redis:
+      type: redis
+      url: ${REDIS_URL}
+  tags:
+    - production
+    - data-processing
+  contact:
+    team: Data Engineering
+    email: dataeng@example.com
+```
+
+#### Key Features
+
+- **Hierarchical Discovery**: MultiFlowServer automatically detects projects and flows within
+- **Backward Compatible**: Standalone flows (without project.yaml) continue to work
+- **Shared Configuration**: Projects can define shared connections and settings
+- **Project Metadata**: Name, description, version, tags, contact information
+- **Project Endpoints**: REST API endpoints for listing projects and project-specific flows
+
+#### MultiFlowServer with Projects
+
+The MultiFlowServer supports both standalone flows and project-based flows:
+
+```bash
+# Start multi-flow server (discovers both)
+python -m flowlang.server --multi ./flows --reload
+```
+
+Directory structure can mix both:
+```
+flows/
+├── standalone_flow/          # Standalone flow
+│   ├── flow.yaml
+│   └── flow.py
+└── my_project/               # Project with multiple flows
+    ├── project.yaml
+    ├── auth_flow/
+    │   ├── flow.yaml
+    │   └── flow.py
+    └── data_flow/
+        ├── flow.yaml
+        └── flow.py
+```
+
+Server endpoints:
+- `/projects` - List all projects
+- `/projects/{name}` - Get project info with flows
+- `/projects/{name}/flows` - List flows in project
+- `/flows` - List all flows (from both projects and standalone)
+- `/flows/{name}/execute` - Execute any flow (unified namespace)
+
+#### CLI Commands
+
+```bash
+# Create a new project
+flowlang project init my-project --name "My Project"
+
+# List all projects in directory
+flowlang project list ./flows
+
+# Show project information
+flowlang project info ./my-project
+
+# Validate project structure
+flowlang project validate ./my-project
+
+# Start server for specific project
+flowlang project serve ./my-project --port 8000 --reload
+```
+
+#### Python API
+
+```python
+from flowlang.project import ProjectManager, ProjectConfig
+
+# Create a project
+project = ProjectManager.create_project(
+    project_dir=Path("./my-project"),
+    name="My Project",
+    description="Collection of data workflows"
+)
+
+# Load project config
+project = ProjectConfig.from_yaml_file(Path("./my-project/project.yaml"))
+
+# Discover projects in directory
+projects = ProjectManager.discover_projects(Path("./flows"))
+
+# Discover flows within a project
+flows = ProjectManager.discover_flows_in_project(Path("./my-project"))
+```
 
 ## Development Workflow
 

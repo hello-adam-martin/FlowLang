@@ -25,6 +25,7 @@ from .executor import FlowExecutor
 from .exceptions import FlowLangError, NotImplementedTaskError
 from .hot_reload import FileWatcher, ReloadManager
 from .cancellation import CancellationToken, ExecutionHandle
+from .project import ProjectManager, ProjectConfig
 import uuid
 
 
@@ -825,72 +826,119 @@ class MultiFlowServer:
             self._setup_hot_reload()
 
     def _discover_flows(self):
-        """Discover and load all flow projects in subdirectories"""
+        """Discover and load all flow projects in subdirectories (supports projects and standalone flows)"""
         print(f"🔍 Discovering flows in: {self.flows_dir}")
         print("="*60)
 
         if not self.flows_dir.exists():
             raise FileNotFoundError(f"Flows directory not found: {self.flows_dir}")
 
-        # Scan for subdirectories containing flow.yaml and flow.py
+        # Scan for subdirectories
         for item in self.flows_dir.iterdir():
             if not item.is_dir():
                 continue
 
-            flow_yaml_path = item / "flow.yaml"
-            flow_py_path = item / "flow.py"
+            # Check if this is a project directory (has project.yaml)
+            if ProjectManager.is_project_dir(item):
+                try:
+                    # Load project config
+                    project_config = ProjectConfig.from_yaml_file(item / "project.yaml")
+                    print(f"\n📁 Project: {project_config.name}")
+                    if project_config.description:
+                        print(f"   Description: {project_config.description}")
 
-            # Check if this is a valid flow project
-            if not (flow_yaml_path.exists() and flow_py_path.exists()):
-                continue
+                    # Discover flows within project
+                    flow_dirs = ProjectManager.discover_flows_in_project(item)
 
-            try:
-                # Load flow definition
-                with open(flow_yaml_path, 'r') as f:
-                    flow_yaml = f.read()
+                    if not flow_dirs:
+                        print(f"   ⚠️  No flows found in project")
+                        continue
 
-                flow_def = yaml.safe_load(flow_yaml)
-                flow_name = flow_def.get('flow', item.name)
+                    print(f"   Found {len(flow_dirs)} flow(s)")
 
-                # Load task registry
-                sys.path.insert(0, str(item))
-                spec = importlib.util.spec_from_file_location(f"flow_{item.name}", flow_py_path)
-                if spec is None or spec.loader is None:
-                    print(f"  ⚠️  Skipping {item.name}: Could not load flow.py")
+                    # Load each flow in the project
+                    for flow_dir in flow_dirs:
+                        self._load_flow(flow_dir, project=project_config)
+
+                except Exception as e:
+                    print(f"  ❌ Error loading project {item.name}: {e}")
                     continue
 
-                flow_module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(flow_module)
-
-                if not hasattr(flow_module, 'create_task_registry'):
-                    print(f"  ⚠️  Skipping {item.name}: No create_task_registry() function")
+            # Check if this is a standalone flow directory
+            elif ProjectManager.is_flow_dir(item):
+                try:
+                    self._load_flow(item, project=None)
+                except Exception as e:
+                    print(f"  ❌ Error loading flow {item.name}: {e}")
                     continue
-
-                registry = flow_module.create_task_registry()
-                executor = FlowExecutor(registry)
-
-                # Store flow data
-                self.flows[flow_name] = {
-                    'executor': executor,
-                    'registry': registry,
-                    'flow_def': flow_def,
-                    'flow_yaml': flow_yaml,
-                    'project_dir': item
-                }
-
-                status = registry.get_implementation_status()
-                ready = "✅" if status['unimplemented_count'] == 0 else "⚠️"
-                print(f"  {ready} Loaded: {flow_name} ({status['progress']} tasks)")
-
-            except Exception as e:
-                print(f"  ❌ Error loading {item.name}: {e}")
-                continue
 
         if not self.flows:
             raise ValueError(f"No valid flows found in {self.flows_dir}")
 
         print("="*60)
         print(f"✅ Loaded {len(self.flows)} flows successfully\n")
+
+    def _load_flow(self, flow_dir: Path, project: Optional[ProjectConfig] = None):
+        """
+        Load a single flow from a directory.
+
+        Args:
+            flow_dir: Directory containing flow.yaml and flow.py
+            project: Optional ProjectConfig if flow is part of a project
+        """
+        flow_yaml_path = flow_dir / "flow.yaml"
+        flow_py_path = flow_dir / "flow.py"
+
+        # Load flow definition
+        with open(flow_yaml_path, 'r') as f:
+            flow_yaml = f.read()
+
+        flow_def = yaml.safe_load(flow_yaml)
+        flow_name = flow_def.get('flow', flow_dir.name)
+
+        # Load task registry
+        sys.path.insert(0, str(flow_dir))
+        spec = importlib.util.spec_from_file_location(f"flow_{flow_dir.name}", flow_py_path)
+        if spec is None or spec.loader is None:
+            print(f"  ⚠️  Skipping {flow_dir.name}: Could not load flow.py")
+            return
+
+        flow_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(flow_module)
+
+        if not hasattr(flow_module, 'create_task_registry'):
+            print(f"  ⚠️  Skipping {flow_dir.name}: No create_task_registry() function")
+            return
+
+        registry = flow_module.create_task_registry()
+        executor = FlowExecutor(registry)
+
+        # Store flow data with project context
+        flow_data = {
+            'executor': executor,
+            'registry': registry,
+            'flow_def': flow_def,
+            'flow_yaml': flow_yaml,
+            'project_dir': flow_dir
+        }
+
+        # Add project metadata if flow is part of a project
+        if project:
+            flow_data['project'] = project.name
+            flow_data['project_config'] = project
+            flow_data['project_description'] = project.description
+            flow_data['project_version'] = project.version
+
+        self.flows[flow_name] = flow_data
+
+        status = registry.get_implementation_status()
+        ready = "✅" if status['unimplemented_count'] == 0 else "⚠️"
+
+        # Format output differently for project flows vs standalone
+        if project:
+            print(f"     {ready} {flow_name} ({status['progress']} tasks)")
+        else:
+            print(f"  {ready} Loaded: {flow_name} ({status['progress']} tasks)")
 
     def _setup_hot_reload(self):
         """Setup hot reload for all flows"""
@@ -1002,6 +1050,11 @@ class MultiFlowServer:
                         "info": "/flows/{flow_name}",
                         "tasks": "/flows/{flow_name}/tasks",
                         "visualize": "/flows/{flow_name}/visualize"
+                    },
+                    "projects": {
+                        "list": "/projects",
+                        "info": "/projects/{project_name}",
+                        "flows": "/projects/{project_name}/flows"
                     },
                     "execution": {
                         "execute": "/flows/{flow_name}/execute",
@@ -1410,6 +1463,135 @@ class MultiFlowServer:
                     status_code=500,
                     detail=f"Error generating visualization: {str(e)}"
                 )
+
+        # Project endpoints
+        @self.app.get("/projects", tags=["Projects"])
+        async def list_projects():
+            """
+            List all projects with their flows.
+
+            Returns project information for all flows that are part of a project.
+            Standalone flows are not included in this list.
+            """
+            projects_map = {}
+
+            for flow_name, flow_data in self.flows.items():
+                if 'project' in flow_data:
+                    project_name = flow_data['project']
+
+                    if project_name not in projects_map:
+                        # Initialize project entry
+                        projects_map[project_name] = {
+                            'name': project_name,
+                            'description': flow_data.get('project_description'),
+                            'version': flow_data.get('project_version', '1.0.0'),
+                            'flows': []
+                        }
+
+                    # Add flow to project
+                    flow_def = flow_data['flow_def']
+                    status = flow_data['registry'].get_implementation_status()
+
+                    projects_map[project_name]['flows'].append({
+                        'name': flow_name,
+                        'description': flow_def.get('description'),
+                        'ready': status['unimplemented_count'] == 0,
+                        'progress': status['progress']
+                    })
+
+            return {
+                'projects': list(projects_map.values()),
+                'count': len(projects_map)
+            }
+
+        @self.app.get("/projects/{project_name}", tags=["Projects"])
+        async def get_project_info(project_name: str):
+            """
+            Get information about a specific project and its flows.
+
+            Returns detailed information about the project including:
+            - Project metadata (name, description, version)
+            - List of flows in the project
+            - Implementation status for each flow
+            """
+            # Find all flows in this project
+            project_flows = []
+            project_config = None
+
+            for flow_name, flow_data in self.flows.items():
+                if flow_data.get('project') == project_name:
+                    if project_config is None and 'project_config' in flow_data:
+                        project_config = flow_data['project_config']
+
+                    flow_def = flow_data['flow_def']
+                    status = flow_data['registry'].get_implementation_status()
+
+                    project_flows.append({
+                        'name': flow_name,
+                        'description': flow_def.get('description'),
+                        'ready': status['unimplemented_count'] == 0,
+                        'progress': status['progress'],
+                        'percentage': f"{status['percentage']:.1f}%",
+                        'tasks_total': status['total'],
+                        'tasks_implemented': status['implemented']
+                    })
+
+            if not project_flows:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Project not found: {project_name}"
+                )
+
+            result = {
+                'name': project_name,
+                'flows': project_flows,
+                'flows_count': len(project_flows)
+            }
+
+            # Add project metadata if available
+            if project_config:
+                result['description'] = project_config.description
+                result['version'] = project_config.version
+                result['tags'] = project_config.tags
+                result['contact'] = project_config.contact
+
+            return result
+
+        @self.app.get("/projects/{project_name}/flows", tags=["Projects"])
+        async def list_project_flows(project_name: str):
+            """
+            List all flows in a specific project.
+
+            Returns the same data as GET /flows but filtered to only include
+            flows that belong to the specified project.
+            """
+            flows_list = []
+
+            for flow_name, flow_data in self.flows.items():
+                if flow_data.get('project') == project_name:
+                    flow_def = flow_data['flow_def']
+
+                    inputs = [
+                        FlowInputSchema(**inp) for inp in flow_def.get('inputs', [])
+                    ]
+                    outputs = [
+                        FlowOutputSchema(**out) for out in flow_def.get('outputs', [])
+                    ]
+
+                    flows_list.append(FlowInfo(
+                        name=flow_name,
+                        description=flow_def.get('description'),
+                        inputs=inputs,
+                        outputs=outputs
+                    ))
+
+            if not flows_list:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Project not found: {project_name}"
+                )
+
+            return flows_list
 
         # Exception handlers
         @self.app.exception_handler(HTTPException)

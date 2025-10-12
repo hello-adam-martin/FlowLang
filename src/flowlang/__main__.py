@@ -8,6 +8,7 @@ Usage:
     python -m flowlang version [options]               # Show version
     python -m flowlang completions <shell>             # Shell completions
     python -m flowlang connection <subcommand> [opts]  # Connection plugins
+    python -m flowlang project <subcommand> [opts]     # Project management
 
     python -m flowlang validate <flow.yaml>            # Validate flow
     python -m flowlang watch <flow.yaml> [options]     # Watch mode
@@ -131,6 +132,15 @@ def main():
         help='Connection subcommand and arguments'
     )
 
+    # Project command
+    project_parser = subparsers.add_parser(
+        'project',
+        help='Manage FlowLang projects'
+    )
+    # Add project subcommands
+    from flowlang.cli_project import add_project_subparsers
+    add_project_subparsers(project_parser)
+
     # Development Commands
 
     # Validate command
@@ -236,6 +246,9 @@ def main():
     elif args.command == 'connection':
         from flowlang.cli_connection import cmd_connection
         sys.exit(cmd_connection(args))
+    elif args.command == 'project':
+        from flowlang.cli_project import cmd_project
+        sys.exit(cmd_project(args))
     elif args.command == 'validate':
         run_validate(args)
     elif args.command == 'watch':
