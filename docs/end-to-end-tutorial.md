@@ -183,7 +183,29 @@ This creates:
 
 ### Step 2: Review Generated Project Configuration
 
-The generated `project.yaml`:
+The command generates a minimal `project.yaml`:
+
+```yaml
+project: Order Processing System
+description: Customer order processing workflows
+version: 1.0.0
+settings:
+  shared_connections: {}
+  tags: []
+  contact: {}
+flows: []
+```
+
+### Step 3: Add Shared Connections
+
+Edit `project.yaml` to add shared connections for PostgreSQL, Stripe, and SendGrid:
+
+```bash
+cd /Users/adam/Projects/FlowLang/flows/order-system
+# Edit project.yaml with your editor
+```
+
+Update it to:
 
 ```yaml
 project: Order Processing System
@@ -211,13 +233,10 @@ settings:
   contact:
     team: Engineering
     email: eng@example.com
-flows:
-  # Flows will be added here as we create them
+flows: []
 ```
 
-### Step 3: Update Connections (Optional)
-
-You can manually edit `project.yaml` to configure shared connections for your environment. For this tutorial, the default configuration above works well.
+**Note**: Flows will be automatically discovered or you can list them explicitly in the `flows:` array.
 
 **Project structure at this point**:
 
