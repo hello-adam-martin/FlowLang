@@ -41,6 +41,7 @@ class RedisPlugin(ConnectionPlugin):
     name = "redis"
     description = "Redis key-value store connection with redis-py"
     version = "1.0.0"
+    category = "caching"
 
     def __init__(self):
         """Initialize Redis plugin"""

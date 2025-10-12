@@ -1,0 +1,29 @@
+project: FlowLang Examples
+description: Example flows demonstrating FlowLang features and patterns
+version: 1.0.0
+settings:
+  shared_connections:
+    # Example connection configurations (commented out - uncomment to use)
+    # postgres:
+    #   type: postgresql
+    #   host: ${DATABASE_HOST}
+    #   database: ${DATABASE_NAME}
+    #   user: ${DATABASE_USER}
+    #   password: ${DATABASE_PASSWORD}
+    # redis:
+    #   type: redis
+    #   url: ${REDIS_URL}
+  tags:
+    - examples
+    - tutorials
+    - documentation
+  contact:
+    team: FlowLang Developers
+    email: developers@flowlang.dev
+    repository: https://github.com/anthropics/flowlang
+flows:
+  - hello_world
+  - early_termination
+  - exit_example
+  - loan_approval
+  - order_fulfillment

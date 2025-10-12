@@ -53,6 +53,7 @@ class AirtablePlugin(ConnectionPlugin):
     name = "airtable"
     description = "Airtable API connection with metadata discovery"
     version = "1.0.0"
+    category = "data_services"
 
     def __init__(self):
         """Initialize Airtable plugin"""

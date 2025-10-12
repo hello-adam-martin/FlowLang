@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Optional
 
 from .project import ProjectManager, ProjectConfig, validate_project_structure
+from .cli_connection_wizard import run_connection_wizard
+import yaml
 
 
 def cmd_project(args):
@@ -110,6 +112,34 @@ def cmd_project_init(args):
 
         print()
         print("✅ Project created successfully!")
+
+        # Run connection wizard unless --skip-connections flag is set
+        if not args.skip_connections:
+            connections = run_connection_wizard()
+
+            # Update project.yaml with connections
+            if connections:
+                project_yaml_path = project_dir / "project.yaml"
+                try:
+                    with open(project_yaml_path, 'r') as f:
+                        project_data = yaml.safe_load(f)
+
+                    # Update shared_connections
+                    if 'settings' not in project_data:
+                        project_data['settings'] = {}
+                    project_data['settings']['shared_connections'] = connections
+
+                    # Write back
+                    with open(project_yaml_path, 'w') as f:
+                        yaml.safe_dump(project_data, f, default_flow_style=False, sort_keys=False)
+
+                    print()
+                    print(f"✅ Updated project.yaml with {len(connections)} connection(s)")
+
+                except Exception as e:
+                    print(f"\n⚠️  Warning: Could not update project.yaml with connections: {e}")
+                    print(f"   You can manually add them later.")
+
         print()
         print("Next steps:")
         print(f"  1. cd {project_dir}")
@@ -354,6 +384,11 @@ def add_project_subparsers(parent_parser):
     init_parser.add_argument(
         '--description', '-d',
         help='Project description (skips interactive prompt)'
+    )
+    init_parser.add_argument(
+        '--skip-connections',
+        action='store_true',
+        help='Skip interactive connection configuration'
     )
 
     # flowlang project list

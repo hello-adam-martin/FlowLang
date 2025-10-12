@@ -35,6 +35,7 @@ class ConnectionPlugin(ABC):
     name: str = "base"
     description: str = ""
     version: str = "1.0.0"
+    category: str = "other"  # Category for grouping in CLI wizard (database, caching, messaging, data_services, api, other)
 
     def __init__(self):
         """Initialize the plugin"""

@@ -196,16 +196,99 @@ settings:
 flows: []
 ```
 
-### Step 3: Add Shared Connections
+### Step 3: Configure Connections (Interactive Wizard)
 
-Edit `project.yaml` to add shared connections for PostgreSQL, Stripe, and SendGrid:
+After creating the project, the CLI automatically launches an **interactive connection wizard** that groups connections by category and prompts you for configuration.
 
-```bash
-cd /Users/adam/Projects/FlowLang/flows/order-system
-# Edit project.yaml with your editor
+The wizard will guide you through:
+
+**Wizard Session**:
+```
+=============================================================
+🔌 Connection Configuration Wizard
+=============================================================
+
+Let's set up connections for your project.
+You can configure connections now or add them manually later.
+
+What types of connections does your project need?
+
+  1. Database Connections
+     Connect to databases for persistent storage
+
+  2. Caching Systems
+     Connect to caching services for performance
+
+  3. Data Services
+     Connect to cloud data platforms
+
+  4. REST APIs
+     Configure custom REST API integrations
+
+Enter numbers separated by commas (e.g., 1,3) or press Enter to skip:
+> 1,4
+
+----------------------------------------------------------------------
+📦 Database Connections
+----------------------------------------------------------------------
+
+Available database connections:
+
+  1. postgres - PostgreSQL database connection with asyncpg
+  2. mysql - MySQL database connection
+  3. mongodb - MongoDB database connection
+  4. sqlite - SQLite database connection
+
+Enter numbers to configure (e.g., 1,2) or press Enter to skip:
+> 1
+
+⚙️  Configuring postgres
+
+Connection name (default: postgres):
+>
+
+Enter configuration values (press Enter for defaults):
+
+  url (PostgreSQL connection URL) (required): postgresql://user:pass@localhost/db
+  pool_size (Connection pool size) [default: 10]:
+  pool_timeout (Pool timeout in seconds) [default: 30]:
+
+✓ Configured connection: postgres
+
+----------------------------------------------------------------------
+📦 REST APIs
+----------------------------------------------------------------------
+
+Configure a custom REST API integration
+
+API connection name (e.g., 'stripe', 'slack'): stripe
+
+Enter API configuration:
+
+  Base URL (e.g., https://api.example.com): https://api.stripe.com/v1
+
+Authentication type:
+  1. API Key (header)
+  2. Bearer Token
+  3. Basic Auth
+  4. None
+Select (1-4): 1
+  Header name (e.g., X-API-Key): Authorization
+  Environment variable for API key: STRIPE_API_KEY
+
+  Request timeout in seconds (default: 30):
+  Enable automatic retries? (y/n, default: y):
+
+✓ Configured REST API connection: stripe
+
+=============================================================
+✓ Configured 2 connection(s)
+=============================================================
+
+✅ Updated project.yaml with 2 connection(s)
 ```
 
-Update it to:
+**Result**: The wizard automatically updates `project.yaml`:
 
 ```yaml
 project: Order Processing System
@@ -214,29 +297,35 @@ version: 1.0.0
 settings:
   shared_connections:
     postgres:
-      type: postgresql
-      host: ${DATABASE_HOST}
-      database: ${DATABASE_NAME}
-      user: ${DATABASE_USER}
-      password: ${DATABASE_PASSWORD}
+      type: postgres
+      url: postgresql://user:pass@localhost/db
+      pool_size: 10
+      pool_timeout: 30
     stripe:
-      type: rest
-      base_url: "https://api.stripe.com/v1"
-      auth_token: ${STRIPE_API_KEY}
-    sendgrid:
-      type: rest
-      base_url: "https://api.sendgrid.com/v3"
-      auth_token: ${SENDGRID_API_KEY}
-  tags:
-    - ecommerce
-    - order-processing
-  contact:
-    team: Engineering
-    email: eng@example.com
+      type: rest_api
+      base_url: https://api.stripe.com/v1
+      auth:
+        type: api_key
+        header: Authorization
+        value: ${STRIPE_API_KEY}
+      timeout: 30
+      retry:
+        max_attempts: 3
+        backoff_factor: 2
+  tags: []
+  contact: {}
 flows: []
 ```
 
-**Note**: Flows will be automatically discovered or you can list them explicitly in the `flows:` array.
+**To Skip the Wizard**: Use the `--skip-connections` flag:
+
+```bash
+python -m flowlang project init order-system \
+  --name "Order Processing System" \
+  --skip-connections
+```
+
+**To Add Connections Later**: Edit `project.yaml` manually or re-run `flowlang project init` (it won't overwrite existing project.yaml).
 
 **Project structure at this point**:
 

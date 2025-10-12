@@ -45,6 +45,7 @@ class MySQLPlugin(ConnectionPlugin):
     name = "mysql"
     description = "MySQL database connection with aiomysql"
     version = "1.0.0"
+    category = "database"
 
     def __init__(self):
         """Initialize MySQL plugin"""

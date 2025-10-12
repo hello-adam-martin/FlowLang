@@ -42,6 +42,7 @@ class SQLitePlugin(ConnectionPlugin):
     name = "sqlite"
     description = "SQLite file-based database connection with aiosqlite"
     version = "1.0.0"
+    category = "database"
 
     def __init__(self):
         """Initialize SQLite plugin"""

@@ -43,6 +43,7 @@ class MongoDBPlugin(ConnectionPlugin):
     name = "mongodb"
     description = "MongoDB NoSQL database connection with Motor"
     version = "1.0.0"
+    category = "database"
 
     def __init__(self):
         """Initialize MongoDB plugin"""

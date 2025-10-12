@@ -441,6 +441,99 @@ python -m flowlang.server --multi flows
 - `/flows/{flow_name}/visualize` - Get Mermaid diagram of flow
 - `/docs` - Interactive OpenAPI/Swagger documentation
 
+### Project-Based Organization
+
+Organize related flows into projects with shared configuration:
+
+**Project structure**:
+```
+my-project/
+├── project.yaml          # Project metadata
+├── auth_flow/
+│   ├── flow.yaml
+│   └── flow.py
+└── data_flow/
+    ├── flow.yaml
+    └── flow.py
+```
+
+**project.yaml example**:
+```yaml
+project: MyProject
+description: Collection of related workflows
+version: 1.0.0
+settings:
+  shared_connections:
+    postgres:
+      type: postgresql
+      host: ${DATABASE_HOST}
+    redis:
+      type: redis
+      url: ${REDIS_URL}
+  tags:
+    - production
+  contact:
+    team: Engineering
+    email: eng@example.com
+```
+
+**Create and manage projects**:
+```bash
+# Create a new project with interactive connection wizard
+flowlang project init my-project --name "My Project"
+
+# The wizard will help you configure connections:
+# - Database (PostgreSQL, MySQL, MongoDB, SQLite)
+# - Caching (Redis)
+# - Data Services (Airtable)
+# - REST APIs (custom integrations)
+
+# Skip connection wizard
+flowlang project init my-project --skip-connections
+
+# List all projects in directory
+flowlang project list ./flows
+
+# Show project information
+flowlang project info ./my-project
+
+# Validate project structure
+flowlang project validate ./my-project
+
+# Start server for specific project
+flowlang project serve ./my-project --port 8000 --reload
+```
+
+**MultiFlowServer with projects** - automatically discovers both:
+```
+flows/
+├── standalone_flow/      # Standalone flow (still supported)
+│   ├── flow.yaml
+│   └── flow.py
+└── my_project/           # Project with multiple flows
+    ├── project.yaml
+    ├── auth_flow/
+    │   ├── flow.yaml
+    │   └── flow.py
+    └── data_flow/
+        ├── flow.yaml
+        └── flow.py
+```
+
+**Project-specific API endpoints**:
+- `/projects` - List all projects
+- `/projects/{name}` - Get project info with flows
+- `/projects/{name}/flows` - List flows in project
+- `/flows` - List all flows (from both projects and standalone)
+- `/flows/{name}/execute` - Execute any flow (unified namespace)
+
+**Benefits**:
+- **Organization**: Group related flows by domain/application
+- **Shared Config**: Define connections once, use across all flows
+- **Metadata**: Project-level version, tags, contact information
+- **Backward Compatible**: Existing flat structures continue to work
+- **Unified API**: All flows accessible regardless of structure
+
 ### VS Code Integration
 
 Enhanced development experience with autocompletion, validation, and snippets:
@@ -528,43 +621,61 @@ FlowLang/
 │       ├── flow.py         # Template task implementations
 │       └── README.md       # Template documentation
 ├── flows/                  # Flow definitions and examples
-│   ├── hello_world.yaml        # Source YAML template
-│   ├── HelloWorld/             # Working example project
-│   ├── loan_approval_v2.yaml   # Pattern example: complex approval flow
-│   ├── exit_example.yaml       # Pattern example: exit step usage
-│   └── early_termination_pattern.yaml  # Pattern example: control flow
+│   └── examples/               # Examples project (project-based organization)
+│       ├── project.yaml        # Project metadata
+│       ├── README.md           # Examples documentation
+│       ├── hello_world/        # Basic flow example
+│       ├── exit_example/       # Early termination patterns
+│       ├── early_termination/  # Advanced termination strategies
+│       ├── loan_approval/      # Business process example
+│       └── order_fulfillment/  # E-commerce workflow
 ├── CLAUDE.md               # Development guide
 └── README.md               # This file
 ```
 
-## Example: HelloWorld Flow
+## Examples
 
-Check out `flows/HelloWorld/` for a complete working example with:
-- Input validation
-- Conditional logic (if/then/else)
-- Multiple task types
-- Error handling patterns
-- Full REST API server
-- 100% test coverage
+FlowLang includes a comprehensive **Examples Project** (`flows/examples/`) demonstrating various features and patterns:
 
-Start it with:
+### Available Examples
+
+1. **Hello World** - Basic flow concepts (conditionals, variable resolution)
+2. **Exit Example** - Early termination patterns and guard clauses
+3. **Early Termination** - Advanced termination strategies and complex conditionals
+4. **Loan Approval** - Real-world business process with switch/case and parallel execution
+5. **Order Fulfillment** - E-commerce workflow with loops and complex orchestration
+
+### Running Examples
+
+**Individual flow**:
 ```bash
-cd flows/HelloWorld
+cd flows/examples/hello_world
 ./tools/start_server.sh
+
+# Test it
+curl -X POST http://localhost:8000/flows/HelloWorld/execute \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"user_name": "Alice"}}'
 ```
 
-Then test it:
+**All examples via multi-flow server**:
 ```bash
-# Valid request
+cd flows/examples
+python -m flowlang project serve . --port 8000 --reload
+
+# Access any flow
 curl -X POST http://localhost:8000/flows/HelloWorld/execute \
   -H "Content-Type: application/json" \
   -d '{"inputs": {"user_name": "Alice"}}'
 
-# Invalid request (empty name)
-curl -X POST http://localhost:8000/flows/HelloWorld/execute \
+curl -X POST http://localhost:8000/flows/LoanApprovalV2/execute \
   -H "Content-Type: application/json" \
-  -d '{"inputs": {"user_name": ""}}'
+  -d @test_inputs.json
 ```
+
+Visit http://localhost:8000/docs for interactive API documentation of all examples.
+
+**See** `flows/examples/README.md` for detailed documentation of each example, learning path, and implementation guidance.
 
 ## Development Workflow
 
@@ -1169,7 +1280,7 @@ steps:
 - Reason and outputs from exit step are included in response
 - Any flow outputs defined in YAML are NOT returned (use exit outputs instead)
 
-See `flows/exit_example.yaml` for more examples and [`docs/control-flow-patterns.md`](docs/control-flow-patterns.md) for best practices.
+See `flows/examples/exit_example/flow.yaml` for more examples and [`docs/control-flow-patterns.md`](docs/control-flow-patterns.md) for best practices.
 
 ## Testing
 
@@ -1218,6 +1329,12 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
 - Auto-generated project structure
 - Complete documentation generation
 - Multi-flow support with auto-discovery
+- **Project-based organization** (group related flows with shared configuration)
+  - ProjectManager for creating and discovering projects
+  - project.yaml for project metadata and shared settings
+  - CLI commands (project init, list, info, validate, serve)
+  - REST API endpoints (/projects, /projects/{name}, /projects/{name}/flows)
+  - Hierarchical flow discovery (projects + standalone flows)
 - VS Code integration (autocompletion, validation, snippets)
 - Flow visualization (Mermaid diagrams, CLI, API)
 - Flow cancellation with cleanup handlers

@@ -42,6 +42,7 @@ class PostgresPlugin(ConnectionPlugin):
     name = "postgres"
     description = "PostgreSQL database connection with asyncpg"
     version = "1.0.0"
+    category = "database"
 
     def __init__(self):
         """Initialize PostgreSQL plugin"""
