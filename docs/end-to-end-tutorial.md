@@ -133,6 +133,7 @@ Starting with project setup ensures:
 
 Use the FlowLang CLI to create the project. The CLI is smart enough to find the `flows/` directory automatically!
 
+**Option 1: Provide all details upfront**
 ```bash
 # From anywhere in the FlowLang repository:
 python -m flowlang project init order-system \
@@ -142,6 +143,18 @@ python -m flowlang project init order-system \
 # Output:
 # 📁 Found flows/ directory: /Users/adam/Projects/FlowLang/flows
 #    Creating project: /Users/adam/Projects/FlowLang/flows/order-system
+```
+
+**Option 2: Interactive mode** (prompts for name and description)
+```bash
+# Just provide the project directory name:
+python -m flowlang project init order-system
+
+# You'll be prompted:
+# 📁 Create New FlowLang Project
+# ============================================================
+# Project name: Order Processing System
+# Description (optional): Customer order processing workflows
 ```
 
 **How it works**:
