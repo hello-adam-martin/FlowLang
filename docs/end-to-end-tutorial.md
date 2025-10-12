@@ -134,14 +134,23 @@ Starting with project setup ensures:
 Use the FlowLang CLI to create the project:
 
 ```bash
-# Navigate to flows directory
+# IMPORTANT: Navigate to flows directory FIRST
+# The project will be created INSIDE the current directory
 cd /Users/adam/Projects/FlowLang/flows
 
-# Create parent project for all order-related workflows
+# Create project in ./order-system/ (relative to current directory)
 python -m flowlang project init order-system \
   --name "Order Processing System" \
   --description "Customer order processing workflows"
+
+# This creates: /Users/adam/Projects/FlowLang/flows/order-system/
 ```
+
+**Understanding the command**:
+- The `order-system` argument is a **relative path** from your current directory
+- If you're in `/flows`, it creates `/flows/order-system/`
+- If you're in `/tmp`, it would create `/tmp/order-system/`
+- **Always `cd` to parent directory first!**
 
 This creates:
 
