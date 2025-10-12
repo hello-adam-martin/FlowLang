@@ -41,7 +41,45 @@ def cmd_project(args):
 
 def cmd_project_init(args):
     """Initialize a new project"""
-    project_dir = Path(args.directory).resolve()
+    # Smart directory detection: if given a simple name without slashes,
+    # try to find flows/ directory in repository
+    directory_arg = args.directory
+
+    if '/' not in directory_arg and directory_arg != '.':
+        # User provided just a name like "order-system"
+        # Try to find flows/ directory automatically
+        cwd = Path.cwd()
+
+        # Check if we're already in flows/ directory
+        if cwd.name == 'flows':
+            project_dir = (cwd / directory_arg).resolve()
+            print(f"📁 Detected flows/ directory: {cwd}")
+            print(f"   Creating project: {project_dir}")
+        # Check if flows/ exists in current directory
+        elif (cwd / 'flows').exists():
+            project_dir = (cwd / 'flows' / directory_arg).resolve()
+            print(f"📁 Found flows/ directory: {cwd / 'flows'}")
+            print(f"   Creating project: {project_dir}")
+        # Check if we're inside a FlowLang repository (look for src/flowlang)
+        elif (cwd / 'src' / 'flowlang').exists() or \
+             (cwd.parent / 'src' / 'flowlang').exists():
+            # Find repository root
+            repo_root = cwd if (cwd / 'src' / 'flowlang').exists() else cwd.parent
+            flows_dir = repo_root / 'flows'
+            flows_dir.mkdir(exist_ok=True)
+            project_dir = (flows_dir / directory_arg).resolve()
+            print(f"📁 Detected FlowLang repository: {repo_root}")
+            print(f"   Using flows directory: {flows_dir}")
+            print(f"   Creating project: {project_dir}")
+        else:
+            # Fallback: use relative path as-is
+            project_dir = Path(directory_arg).resolve()
+            print(f"⚠️  No flows/ directory detected")
+            print(f"   Creating project at: {project_dir}")
+    else:
+        # User provided a path (absolute or relative with slashes)
+        project_dir = Path(directory_arg).resolve()
+
     name = args.name
     description = args.description
 

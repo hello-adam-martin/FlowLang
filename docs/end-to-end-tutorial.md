@@ -131,26 +131,35 @@ Starting with project setup ensures:
 
 ### Step 1: Create Parent Project
 
-Use the FlowLang CLI to create the project:
+Use the FlowLang CLI to create the project. The CLI is smart enough to find the `flows/` directory automatically!
 
 ```bash
-# IMPORTANT: Navigate to flows directory FIRST
-# The project will be created INSIDE the current directory
-cd /Users/adam/Projects/FlowLang/flows
-
-# Create project in ./order-system/ (relative to current directory)
+# From anywhere in the FlowLang repository:
 python -m flowlang project init order-system \
   --name "Order Processing System" \
   --description "Customer order processing workflows"
 
-# This creates: /Users/adam/Projects/FlowLang/flows/order-system/
+# Output:
+# 📁 Found flows/ directory: /Users/adam/Projects/FlowLang/flows
+#    Creating project: /Users/adam/Projects/FlowLang/flows/order-system
 ```
 
-**Understanding the command**:
-- The `order-system` argument is a **relative path** from your current directory
-- If you're in `/flows`, it creates `/flows/order-system/`
-- If you're in `/tmp`, it would create `/tmp/order-system/`
-- **Always `cd` to parent directory first!**
+**How it works**:
+- The CLI automatically detects the `flows/` directory in your repository
+- No need to `cd` to a specific location first!
+- If you're already in `flows/`, it uses that directory
+- If `flows/` exists in current directory, it uses that
+- If in a FlowLang repository, it finds and uses the repository's `flows/` directory
+- Fallback: uses relative path if no `flows/` directory found
+
+**Flexibility**: You can still use explicit paths if needed:
+```bash
+# Use absolute path
+python -m flowlang project init /path/to/my-project
+
+# Use relative path with slashes
+python -m flowlang project init ../other-location/my-project
+```
 
 This creates:
 
