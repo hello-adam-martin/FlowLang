@@ -4,10 +4,10 @@ This document captures potential future enhancements for FlowLang. For currently
 
 ## Implementation Status
 
-**Completed**: 4 out of 17 major features
+**Completed**: 5 out of 17 major features
 
 - **Tier 1**: ✅ 3/3 completed (100%)
-- **Tier 2**: ✅ 1/5 completed (20%)
+- **Tier 2**: ✅ 2/5 completed (40%)
 - **Tier 3**: 0/4 completed
 - **Tier 4**: 0/5 completed
 
@@ -123,42 +123,71 @@ Production-grade monitoring and debugging capabilities.
 
 ---
 
-## Event-Driven Triggers
+## ✅ Event-Driven Triggers (IMPLEMENTED)
+
+**Status**: ✅ Webhook and Schedule triggers fully implemented
 
 Enable flows to be triggered by external events.
 
-### Webhook Support
+### ✅ Webhook Support (IMPLEMENTED)
+
+**Location**: `src/flowlang/triggers/webhook.py`, `flows/examples/webhook_example/`
+
 ```yaml
 flow: ProcessOrder
 triggers:
   - type: webhook
-    path: /orders/new
+    path: /webhooks/orders/new
     method: POST
-    auth: bearer_token
+    auth:
+      type: api_key
+      header: X-API-Key
+      key: ${WEBHOOK_SECRET}
+    async: false  # Sync/async execution
+    input_mapping: body
 ```
 
-**Features**:
-- Automatic webhook endpoint creation
-- Authentication (API keys, OAuth)
-- Payload validation
-- Rate limiting
+**Implemented Features**:
+- ✅ Automatic webhook endpoint creation (FastAPI routers)
+- ✅ Authentication (API key, Bearer token with constant-time comparison)
+- ✅ Multiple HTTP methods (GET, POST, PUT, DELETE, PATCH)
+- ✅ Input mapping (body, query, headers, path, all)
+- ✅ Sync and async execution modes
+- ✅ Request metadata injection (`_webhook`)
+- ✅ Hot reload support
+- ✅ Status tracking and monitoring endpoints
 
-### Scheduled Execution
+### ✅ Scheduled Execution (IMPLEMENTED)
+
+**Location**: `src/flowlang/triggers/schedule.py`, `flows/examples/schedule_example/`
+
 ```yaml
 flow: DailyReport
 triggers:
   - type: schedule
+    id: daily_report
     cron: "0 9 * * *"  # Every day at 9am
-    timezone: "America/New_York"
+    timezone: America/New_York
+    max_instances: 1
+    enabled: true
 ```
 
-**Features**:
-- Cron-based scheduling
-- Timezone support
-- One-time vs recurring
-- Missed execution handling
+**Implemented Features**:
+- ✅ Cron-based scheduling (5-field cron expressions)
+- ✅ Timezone support (all IANA timezones with DST handling)
+- ✅ Overlap prevention (max_instances)
+- ✅ Background scheduler loop with async execution
+- ✅ Next execution calculation (croniter)
+- ✅ Schedule metadata injection (`_schedule`)
+- ✅ Multiple schedules per flow
+- ✅ Enable/disable flag
+- ✅ Hot reload support
+- ✅ Status tracking with execution counts
 
-### Message Queue Integration
+**Documentation**: See `docs/triggers.md` (1655 lines) for comprehensive guide
+
+### Message Queue Integration (Future)
+
 ```yaml
 flow: ProcessMessage
 triggers:
@@ -168,7 +197,7 @@ triggers:
     batch_size: 10
 ```
 
-**Supported Providers**:
+**Planned Providers**:
 - RabbitMQ
 - AWS SQS
 - Google Cloud Pub/Sub
@@ -760,10 +789,13 @@ All Tier 1 features have been implemented!
    - Location: `src/flowlang/cli_*.py`
    - Status: All commands implemented (`init`, `doctor`, `version`, `upgrade`, `completions`)
 
-5. **Testing Framework** - Build on existing executor with mocks and assertion helpers
-6. **Database Integration Helpers** - Use existing DB libraries; create built-in task types
-7. **Flow Composition & Subflows** - Recursive flow execution with context nesting
-8. **Event-Driven Triggers** - Webhooks (FastAPI), scheduling (APScheduler), message queues
+5. ✅ **Event-Driven Triggers** - Webhooks and scheduled execution (cron)
+   - Location: `src/flowlang/triggers/`, `docs/triggers.md`
+   - Status: Webhook and Schedule triggers fully implemented (Queue triggers planned)
+
+6. **Testing Framework** - Build on existing executor with mocks and assertion helpers
+7. **Database Integration Helpers** - Use existing DB libraries; create built-in task types
+8. **Flow Composition & Subflows** - Recursive flow execution with context nesting
 
 ### Tier 3: Significant Effort
 9. **API Gateway Integration** - Rate limiting, API keys, CORS, request transformation
@@ -782,15 +814,19 @@ All Tier 1 features have been implemented!
 
 ## Progress Summary
 
-**Overall Progress**: 4 out of 17 major features completed (23.5%)
+**Overall Progress**: 5 out of 17 major features completed (29.4%)
 
 **By Tier**:
 - **Tier 1** (Quick Wins): ✅ 3/3 completed (100%) - Flow Templates, Client SDKs, Flow Cancellation (partial)
-- **Tier 2** (Moderate): ✅ 1/5 completed (20%) - Developer Experience Tools
+- **Tier 2** (Moderate): ✅ 2/5 completed (40%) - Developer Experience Tools, Event-Driven Triggers
 - **Tier 3** (Significant): 0/4 completed (0%)
 - **Tier 4** (Complex): 0/5 completed (0%)
 
 **Recently Completed**:
+- **Triggers System** (`src/flowlang/triggers/`) - Webhook and Schedule triggers with comprehensive docs
+  - Webhook triggers with auth, input mapping, sync/async modes
+  - Schedule triggers with cron, timezone support, overlap prevention
+  - Full server integration and hot reload support
 - Python Client SDK (`src/flowlang/client.py`) - Full async/sync support with streaming
 - TypeScript Client SDK (`clients/typescript/`) - Complete npm package
 - Template System with interactive creation
@@ -801,7 +837,7 @@ All Tier 1 features have been implemented!
 2. **Database Integration Helpers** - High developer value for common workflows
 3. **Flow Composition & Subflows** - Enables workflow reusability patterns
 
-**Note**: This ranking prioritizes implementation complexity. Business value and dependencies may affect actual implementation order. Testing Framework (Tier 2 #5) should likely be prioritized next despite moderate complexity due to its foundational importance.
+**Note**: This ranking prioritizes implementation complexity. Business value and dependencies may affect actual implementation order. Testing Framework (Tier 2 #6) should likely be prioritized next despite moderate complexity due to its foundational importance.
 
 ---
 

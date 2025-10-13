@@ -1195,7 +1195,6 @@ enable_hot_reload = os.getenv('UVICORN_RELOAD', 'false').lower() == 'true' or '-
 # Create the server and get the FastAPI app
 server = FlowServer(
     project_dir=".",
-    tasks_file="flow.py",
     title="{self.flow_name} API",
     version="1.0.0",
     enable_hot_reload=True  # Enable hot reload for development

@@ -116,20 +116,27 @@ class FlowVisualizer:
         node_id = f"node{self.node_counter}"
         self.node_counter += 1
 
-        # Escape special characters in label
-        label = label.replace('"', '&quot;').replace('\n', '<br/>')
+        # Escape special characters in label for Mermaid
+        # For diamond shapes, we need to keep the label shorter and clearer
+        label_display = label.replace('\n', '<br/>')
 
         # Format node based on shape
         if shape == "circle":
-            node_def = f'{node_id}(("{label}"))'
+            label_escaped = label_display.replace('"', '&quot;')
+            node_def = f'{node_id}(("{label_escaped}"))'
         elif shape == "diamond":
-            node_def = f'{node_id}{{{"{label}"}}}'
+            # For diamonds, escape quotes differently to work with Mermaid syntax
+            label_escaped = label_display.replace('"', "'")
+            node_def = f'{node_id}{{{{"{label_escaped}"}}}}'
         elif shape == "parallelogram":
-            node_def = f'{node_id}[/"{label}"/]'
+            label_escaped = label_display.replace('"', '&quot;')
+            node_def = f'{node_id}[/"{label_escaped}"/]'
         elif shape == "rect":
-            node_def = f'{node_id}["{label}"]'
+            label_escaped = label_display.replace('"', '&quot;')
+            node_def = f'{node_id}["{label_escaped}"]'
         else:
-            node_def = f'{node_id}["{label}"]'
+            label_escaped = label_display.replace('"', '&quot;')
+            node_def = f'{node_id}["{label_escaped}"]'
 
         self.nodes.append(node_def)
         return node_id
@@ -224,7 +231,7 @@ class FlowVisualizer:
         parallel_steps = step['parallel']
 
         # Add fork node
-        fork_id = self._add_node("Fork", shape="diamond")
+        fork_id = self._add_node("Fork: Run in Parallel", shape="diamond")
         self._add_edge(prev_node, fork_id)
 
         # Process each parallel branch
@@ -234,7 +241,7 @@ class FlowVisualizer:
             branch_ends.append(branch_end)
 
         # Add join node
-        join_id = self._add_node("Join", shape="diamond")
+        join_id = self._add_node("Join: Wait for All", shape="diamond")
         for branch_end in branch_ends:
             self._add_edge(branch_end, join_id)
 
@@ -244,8 +251,8 @@ class FlowVisualizer:
         """Process conditional if/then/else step."""
         condition = step['if']
 
-        # Add decision node
-        decision_label = self._format_condition(condition)
+        # Add decision node with "If:" prefix and question format
+        decision_label = f"If: {self._format_condition_as_question(condition)}"
         decision_id = self._add_node(decision_label, shape="diamond")
         self._add_edge(prev_node, decision_id)
 
@@ -276,7 +283,7 @@ class FlowVisualizer:
                         break
 
         # Add merge node
-        merge_id = self._add_node("Merge", shape="diamond")
+        merge_id = self._add_node("End If", shape="diamond")
 
         # Connect both branches to merge
         if isinstance(then_end, list):
@@ -303,7 +310,7 @@ class FlowVisualizer:
         loop_steps = step.get('do', [])
 
         # Add loop start node
-        loop_label = f"for each {item_var}<br/>in {items_ref}"
+        loop_label = f"Loop: for each {item_var}"
         loop_start_id = self._add_node(loop_label, shape="diamond")
         self._add_edge(prev_node, loop_start_id)
 
@@ -315,7 +322,7 @@ class FlowVisualizer:
             self._add_edge(loop_body_end, loop_start_id, label="next")
 
         # Add loop exit
-        loop_end_id = self._add_node("Loop End", shape="diamond")
+        loop_end_id = self._add_node("End Loop", shape="diamond")
         self._add_edge(loop_start_id, loop_end_id, label="done")
 
         return loop_end_id
@@ -325,21 +332,85 @@ class FlowVisualizer:
         Format a condition string for display.
 
         Args:
-            condition: Condition expression
+            condition: Condition expression (string or dict for quantified conditions)
 
         Returns:
             Formatted condition string
         """
-        # Simplify common patterns
+        import re
+
+        # Handle quantified conditions (dict with 'any', 'all', 'none')
+        if isinstance(condition, dict):
+            # Extract the quantifier and conditions
+            if 'any' in condition:
+                quantifier = "any"
+                conditions = condition['any']
+            elif 'all' in condition:
+                quantifier = "all"
+                conditions = condition['all']
+            elif 'none' in condition:
+                quantifier = "none"
+                conditions = condition['none']
+            else:
+                return str(condition)[:40]
+
+            # Count conditions
+            count = len(conditions) if isinstance(conditions, list) else 1
+
+            # For visualization, just show the quantifier and count
+            return f"{quantifier} of {count} conditions"
+
+        # Handle simple string conditions
         condition = str(condition)
 
         # Replace ${...} with just the variable name for readability
-        import re
         condition = re.sub(r'\$\{([^}]+)\}', r'\1', condition)
 
         # Truncate if too long
         if len(condition) > 40:
             condition = condition[:37] + "..."
+
+        return condition
+
+    def _format_condition_as_question(self, condition: str) -> str:
+        """
+        Format a condition as a natural language question.
+
+        Args:
+            condition: Condition expression (string or dict for quantified)
+
+        Returns:
+            Question-formatted condition string
+        """
+        import re
+
+        # Handle quantified conditions - they already come formatted from _format_condition
+        if isinstance(condition, dict):
+            formatted = self._format_condition(condition)
+            # Convert to question: "any of 3 conditions" -> "any of 3 met?"
+            if formatted.endswith('conditions'):
+                return formatted.replace('conditions', 'met?')
+            return formatted + '?'
+
+        # First apply standard formatting
+        condition = self._format_condition(condition)
+
+        # Convert common patterns to questions
+        # Pattern: something == true
+        condition = re.sub(r'(.+?)\s*==\s*[Tt]rue', r'\1?', condition)
+
+        # Pattern: something == false (make it "not something?")
+        condition = re.sub(r'(.+?)\s*==\s*[Ff]alse', r'not \1?', condition)
+
+        # Pattern: something != true (make it "not something?")
+        condition = re.sub(r'(.+?)\s*!=\s*[Tt]rue', r'not \1?', condition)
+
+        # Pattern: something != false
+        condition = re.sub(r'(.+?)\s*!=\s*[Ff]alse', r'\1?', condition)
+
+        # If no patterns matched, just add ? at the end if not already there
+        if not condition.endswith('?'):
+            condition += '?'
 
         return condition
 

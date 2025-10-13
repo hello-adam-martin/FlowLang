@@ -51,6 +51,10 @@ FlowLang/
 │   ├── templates.py       # TemplateManager - template system
 │   ├── hot_reload.py      # Hot reload - file watching and live reload
 │   ├── watch.py           # Watch mode - live testing CLI
+│   ├── triggers/          # Event-driven flow execution
+│   │   ├── base.py        # Trigger base classes and manager
+│   │   ├── webhook.py     # HTTP webhook triggers
+│   │   └── __init__.py    # Trigger exports
 │   └── exceptions.py      # Custom exceptions
 ├── templates/             # Pre-built flow templates
 │   └── APIIntegration/    # REST API integration template
@@ -141,6 +145,25 @@ FlowLang/
    - `FlowTerminationException` - Intentional flow termination via exit step (control flow, not an error)
    - `ReloadError` - Hot reload failure
 
+9. **Triggers** (src/flowlang/triggers/)
+   - Event-driven flow execution system
+   - **Trigger** (base.py): Abstract base class for all trigger types
+     - Lifecycle management (start/stop)
+     - Flow execution with metrics tracking
+     - Execution count and error tracking
+   - **TriggerManager** (base.py): Manages multiple triggers
+     - Factory pattern for trigger creation
+     - Bulk start/stop operations
+     - Trigger registry and status tracking
+   - **WebhookTrigger** (webhook.py): HTTP endpoint triggers
+     - Multiple HTTP methods (GET, POST, PUT, DELETE, PATCH)
+     - Authentication (API key, bearer token)
+     - Input mapping strategies (body, query, headers, path, all)
+     - Sync and async execution modes
+     - FastAPI router integration
+   - Server integration in FlowServer and MultiFlowServer
+   - Trigger management REST API endpoints
+
 ### Flow Definition Format
 
 Flows are defined in YAML with the following structure:
@@ -148,6 +171,18 @@ Flows are defined in YAML with the following structure:
 ```yaml
 flow: FlowName
 description: Optional description
+
+# Optional triggers for event-driven execution
+triggers:
+  - type: webhook
+    path: /webhooks/my-flow
+    method: POST
+    auth:
+      type: api_key
+      header: X-API-Key
+      key: ${API_KEY}
+    async: false
+    input_mapping: body
 
 inputs:
   - name: input_name
@@ -182,6 +217,13 @@ outputs:
   - With outputs: `- exit: {reason: "message", outputs: {key: value}}`
 - **Error handling**: `retry:` config, `on_error:` handler steps
 - **Dependencies**: `depends_on:` [step_ids]
+- **Triggers**: Event-driven flow execution
+  - **Webhook triggers**: Execute flows via HTTP requests
+    - Multiple HTTP methods (GET, POST, PUT, DELETE, PATCH)
+    - Authentication (API key, bearer token)
+    - Input mapping (body, query, headers, path, all)
+    - Sync/async execution modes
+  - Future triggers: schedule (cron), queue (message brokers)
 - **Subflows**: `subflow:` flow_name (planned feature)
 
 ### Variable Resolution
@@ -800,6 +842,56 @@ print(f"Unimplemented: {status['unimplemented_tasks']}")
      - Module entry: `python -m flowlang` (always available)
      - All commands accessible both ways
 
+9. **Event-Driven Triggers** ✅: Execute flows automatically in response to events
+   - See `src/flowlang/triggers/`
+   - **Trigger Framework**: Extensible base for all trigger types
+     - Abstract `Trigger` class with lifecycle management
+     - `TriggerManager` for multi-trigger orchestration
+     - Factory pattern for trigger creation from config
+     - Execution tracking and error metrics
+   - **Webhook Triggers**: HTTP endpoint triggers
+     - Multiple HTTP methods (GET, POST, PUT, DELETE, PATCH)
+     - Authentication support:
+       - API Key authentication (custom header)
+       - Bearer token authentication
+     - Input mapping strategies:
+       - `body`: Extract from request body (JSON)
+       - `query`: Extract from query parameters
+       - `headers`: Extract from request headers
+       - `path`: Extract from path parameters
+       - `all`: Combine all sources
+     - Execution modes:
+       - Sync: Wait for flow completion and return results
+       - Async: Return immediately, execute in background
+     - FastAPI router integration
+   - **Server Integration**: Works in both single and multi-flow modes
+     - Auto-loads triggers from flow.yaml `triggers:` section
+     - Trigger routers mounted on FlowServer/MultiFlowServer
+     - Hot reload support for trigger configuration
+   - **REST API Endpoints**:
+     - `GET /flows/{name}/triggers` - List all triggers for a flow
+     - `GET /flows/{name}/triggers/{id}` - Get trigger status and metrics
+   - **Usage in flow.yaml**:
+     ```yaml
+     triggers:
+       - type: webhook
+         path: /webhooks/my-flow
+         method: POST
+         auth:
+           type: api_key
+           header: X-API-Key
+           key: ${SECRET_KEY}
+         async: false
+         input_mapping: body
+     ```
+   - **Trigger Status Tracking**:
+     - Execution count
+     - Error count
+     - Last execution time
+     - Running status
+   - **Example Flow**: `flows/examples/webhook_example/`
+   - **Unit Tests**: Comprehensive test suite in `tests/test_triggers.py`
+
 ## Planned Features (Not Yet Implemented)
 
 The following features are part of the FlowLang vision but not yet implemented:
@@ -807,9 +899,11 @@ The following features are part of the FlowLang vision but not yet implemented:
 1. **Subflow Loader**: Load and execute referenced subflows from other files
 2. **Timeout Support**: Task-level timeout enforcement
 3. **Approval Gates**: Human-in-the-loop workflow steps (pause/resume)
-4. **Event Triggers**: Webhook-based flow initiation
+4. **Additional Trigger Types**:
+   - Schedule triggers: Cron-based flow execution
+   - Queue triggers: Message broker integration (RabbitMQ, Kafka, etc.)
 5. **Web UI**: Visual flow designer and monitoring dashboard
-6. **Authentication**: API key and OAuth support for REST API
+6. **Authentication**: API key and OAuth support for REST API (global server auth)
 7. **Rate Limiting**: Request throttling for production deployments
 
 ## Design Principles

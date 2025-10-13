@@ -1,0 +1,30 @@
+flow: WebhookExample
+description: Example flow demonstrating webhook triggers
+
+triggers:
+  - type: webhook
+    path: /webhooks/example
+    method: POST
+    async: false  # Synchronous execution for testing
+    input_mapping: body
+
+inputs:
+  - name: message
+    type: string
+    required: true
+    description: Message to process
+
+steps:
+  - task: ProcessMessage
+    id: process
+    inputs:
+      message: ${inputs.message}
+    outputs:
+      - processed_message
+      - timestamp
+
+outputs:
+  - name: result
+    value: ${process.processed_message}
+  - name: timestamp
+    value: ${process.timestamp}

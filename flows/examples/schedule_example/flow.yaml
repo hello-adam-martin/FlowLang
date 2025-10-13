@@ -1,0 +1,50 @@
+flow: ScheduledReportFlow
+description: Example flow that runs on a schedule to generate reports
+
+# Schedule triggers - automatically execute the flow on a time-based schedule
+triggers:
+  # Run every minute for testing
+  - type: schedule
+    id: every_minute
+    cron: "* * * * *"  # Every minute
+    timezone: UTC
+    max_instances: 1
+    enabled: true
+
+  # Run every 5 minutes
+  - type: schedule
+    id: every_5_minutes
+    cron: "*/5 * * * *"  # Every 5 minutes
+    timezone: America/New_York
+    max_instances: 1
+    enabled: false  # Disabled by default
+
+inputs: []
+
+steps:
+  - task: GetCurrentTime
+    id: get_time
+    outputs:
+      - timestamp
+      - formatted_time
+
+  - task: GenerateReport
+    id: generate_report
+    inputs:
+      timestamp: ${get_time.timestamp}
+      trigger_info: ${inputs._schedule}
+    outputs:
+      - report_id
+      - report_data
+
+  - task: LogReport
+    id: log_report
+    inputs:
+      report_id: ${generate_report.report_id}
+      report_data: ${generate_report.report_data}
+
+outputs:
+  - name: report_id
+    value: ${generate_report.report_id}
+  - name: execution_time
+    value: ${get_time.formatted_time}

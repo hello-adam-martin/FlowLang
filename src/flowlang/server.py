@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 import importlib.util
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 from pydantic import BaseModel, Field, create_model
 import yaml
 import uvicorn
@@ -26,6 +26,9 @@ from .exceptions import FlowLangError, NotImplementedTaskError
 from .hot_reload import FileWatcher, ReloadManager
 from .cancellation import CancellationToken, ExecutionHandle
 from .project import ProjectManager, ProjectConfig
+from .triggers import TriggerManager, TriggerConfig
+from .triggers.webhook import create_webhook_trigger
+from .triggers.schedule import create_schedule_trigger
 import uuid
 
 
@@ -76,14 +79,14 @@ class FlowServer:
     """
     FastAPI server for FlowLang flows.
 
-    Loads a flow project (flow.yaml + tasks.py) and exposes it as REST endpoints.
+    Loads a flow project (flow.yaml + flow.py) and exposes it as REST endpoints.
     """
 
     def __init__(
         self,
         project_dir: str = ".",
         flow_file: str = "flow.yaml",
-        tasks_file: str = "tasks.py",
+        tasks_file: str = "flow.py",
         title: str = "FlowLang API",
         version: str = "1.0.0",
         enable_hot_reload: bool = False
@@ -92,9 +95,9 @@ class FlowServer:
         Initialize the FlowLang server.
 
         Args:
-            project_dir: Directory containing flow.yaml and tasks.py
+            project_dir: Directory containing flow.yaml and flow.py
             flow_file: Name of the flow YAML file
-            tasks_file: Name of the tasks Python file
+            tasks_file: Name of the tasks Python file (default: flow.py)
             title: API title for OpenAPI docs
             version: API version
             enable_hot_reload: Enable hot reload for development (watches files for changes)
@@ -120,6 +123,11 @@ class FlowServer:
         # Create dynamic request model based on flow inputs
         self.request_model = self._create_request_model()
 
+        # Initialize trigger manager
+        self.trigger_manager = TriggerManager()
+        self.trigger_manager.register_trigger_type('webhook', create_webhook_trigger)
+        self.trigger_manager.register_trigger_type('schedule', create_schedule_trigger)
+
         # Create FastAPI app
         self.app = FastAPI(
             title=title,
@@ -129,6 +137,20 @@ class FlowServer:
 
         # Register routes
         self._register_routes()
+
+        # Setup triggers from flow definition
+        self._setup_triggers()
+
+        # Register startup and shutdown events for triggers
+        @self.app.on_event("startup")
+        async def startup_triggers():
+            """Start all triggers when server starts"""
+            await self.trigger_manager.start_all()
+
+        @self.app.on_event("shutdown")
+        async def shutdown_triggers():
+            """Stop all triggers when server shuts down"""
+            await self.trigger_manager.stop_all()
 
         # Initialize hot reload if enabled
         self.reload_manager = None
@@ -220,6 +242,65 @@ class FlowServer:
 
         # Start watching
         self.file_watcher.start(str(self.project_dir))
+
+    def _setup_triggers(self):
+        """Setup triggers from flow definition"""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Parse triggers from flow definition
+        triggers_config = self.flow_def.get('triggers', [])
+
+        if not triggers_config:
+            return  # No triggers defined
+
+        logger.info(f"📡 Setting up {len(triggers_config)} trigger(s) for flow {self.flow_name}")
+
+        # Create flow executor wrapper for triggers
+        async def trigger_flow_executor(inputs: Dict[str, Any]) -> Dict[str, Any]:
+            """Wrapper function that triggers can call to execute the flow"""
+            try:
+                result = await self.executor.execute_flow(
+                    self.flow_yaml,
+                    inputs=inputs
+                )
+                return result
+            except Exception as e:
+                logger.exception(f"Error executing flow from trigger: {e}")
+                return {
+                    'success': False,
+                    'error': str(e),
+                    'flow': self.flow_name
+                }
+
+        # Create triggers from configuration
+        for trigger_data in triggers_config:
+            try:
+                trigger_config = TriggerConfig.from_dict(trigger_data)
+
+                if not trigger_config.enabled:
+                    logger.info(f"   ⏸️  Skipping disabled trigger: {trigger_config.id or trigger_config.type}")
+                    continue
+
+                trigger = self.trigger_manager.create_trigger(
+                    trigger_config,
+                    self.flow_name,
+                    trigger_flow_executor
+                )
+
+                if trigger:
+                    # For webhook triggers, include their routers in the FastAPI app
+                    if trigger_config.type == 'webhook':
+                        from .triggers.webhook import WebhookTrigger
+                        if isinstance(trigger, WebhookTrigger):
+                            router = trigger.create_router()
+                            self.app.include_router(router)
+                            logger.info(f"   ✅ Webhook trigger registered: {trigger.method} {trigger.path}")
+                    else:
+                        logger.info(f"   ✅ Trigger registered: {trigger_config.type}")
+
+            except Exception as e:
+                logger.error(f"   ❌ Failed to create trigger: {e}")
 
     def _create_request_model(self) -> type[BaseModel]:
         """
@@ -665,7 +746,13 @@ class FlowServer:
             }
 
         @self.app.get("/flows/{flow_name}/visualize", tags=["Visualization"])
-        async def visualize_flow(flow_name: str):
+        async def visualize_flow(
+            flow_name: str,
+            format: str = Query(
+                default="json",
+                description="Output format: 'json' for Mermaid text (default) or 'html' for rendered diagram"
+            )
+        ):
             """
             Generate a Mermaid diagram visualization of the flow structure.
 
@@ -675,6 +762,9 @@ class FlowServer:
             - Parallel execution
             - Conditional branching
             - Loops
+
+            Query Parameters:
+            - format: 'json' (default) returns Mermaid text, 'html' returns rendered HTML page
             """
             if flow_name != self.flow_name:
                 raise HTTPException(status_code=404, detail=f"Flow not found: {flow_name}")
@@ -685,16 +775,93 @@ class FlowServer:
                 visualizer = FlowVisualizer(self.flow_def)
                 diagram = visualizer.generate_mermaid()
 
-                return {
-                    "flow": flow_name,
-                    "diagram": diagram,
-                    "format": "mermaid"
-                }
+                if format.lower() == "html":
+                    # Load HTML template
+                    template_path = Path(__file__).parent / "templates" / "visualize.html"
+                    if not template_path.exists():
+                        raise HTTPException(
+                            status_code=500,
+                            detail="HTML template not found"
+                        )
+
+                    with open(template_path, 'r') as f:
+                        html_template = f.read()
+
+                    # Strip markdown code fence from diagram (Mermaid.js doesn't need it)
+                    diagram_clean = diagram.strip()
+                    if diagram_clean.startswith('```mermaid'):
+                        diagram_clean = diagram_clean[len('```mermaid'):].strip()
+                    if diagram_clean.endswith('```'):
+                        diagram_clean = diagram_clean[:-3].strip()
+
+                    # Replace template variables
+                    html_content = html_template.replace("{{flow_name}}", flow_name)
+                    html_content = html_content.replace("{{diagram}}", diagram_clean)
+
+                    return HTMLResponse(content=html_content)
+                else:
+                    # Default JSON response
+                    return {
+                        "flow": flow_name,
+                        "diagram": diagram,
+                        "format": "mermaid"
+                    }
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(
                     status_code=500,
                     detail=f"Error generating visualization: {str(e)}"
                 )
+
+        @self.app.get("/flows/{flow_name}/triggers", tags=["Triggers"])
+        async def list_triggers(flow_name: str):
+            """
+            List all triggers for a flow.
+
+            Returns information about all triggers configured for the flow including:
+            - Trigger ID
+            - Trigger type (webhook, schedule, etc.)
+            - Status (running, stopped)
+            - Configuration details
+            """
+            if flow_name != self.flow_name:
+                raise HTTPException(status_code=404, detail=f"Flow not found: {flow_name}")
+
+            triggers = []
+            for trigger_id, trigger in self.trigger_manager.triggers.items():
+                status = trigger.get_status()
+                triggers.append(status)
+
+            return {
+                "flow": flow_name,
+                "triggers": triggers,
+                "count": len(triggers)
+            }
+
+        @self.app.get("/flows/{flow_name}/triggers/{trigger_id}", tags=["Triggers"])
+        async def get_trigger_status(flow_name: str, trigger_id: str):
+            """
+            Get detailed status of a specific trigger.
+
+            Returns:
+            - Trigger ID
+            - Trigger type
+            - Running status
+            - Configuration
+            - Statistics (execution count, last triggered, etc.)
+            """
+            if flow_name != self.flow_name:
+                raise HTTPException(status_code=404, detail=f"Flow not found: {flow_name}")
+
+            trigger = self.trigger_manager.triggers.get(trigger_id)
+            if not trigger:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Trigger not found: {trigger_id}"
+                )
+
+            return trigger.get_status()
 
         # Exception handlers
         @self.app.exception_handler(HTTPException)
@@ -822,6 +989,26 @@ class MultiFlowServer:
         # Register routes
         self._register_routes()
 
+        # Setup triggers for all flows
+        self._setup_triggers()
+
+        # Register startup and shutdown events for triggers
+        @self.app.on_event("startup")
+        async def startup_triggers():
+            """Start all triggers when server starts"""
+            for flow_name, flow_data in self.flows.items():
+                trigger_manager = flow_data.get('trigger_manager')
+                if trigger_manager:
+                    await trigger_manager.start_all()
+
+        @self.app.on_event("shutdown")
+        async def shutdown_triggers():
+            """Stop all triggers when server shuts down"""
+            for flow_name, flow_data in self.flows.items():
+                trigger_manager = flow_data.get('trigger_manager')
+                if trigger_manager:
+                    await trigger_manager.stop_all()
+
         # Setup hot reload for all flows if enabled
         if self.enable_hot_reload:
             self._setup_hot_reload()
@@ -914,13 +1101,19 @@ class MultiFlowServer:
         registry = flow_module.create_task_registry()
         executor = FlowExecutor(registry)
 
+        # Initialize trigger manager for this flow
+        trigger_manager = TriggerManager()
+        trigger_manager.register_trigger_type('webhook', create_webhook_trigger)
+        trigger_manager.register_trigger_type('schedule', create_schedule_trigger)
+
         # Store flow data with project context
         flow_data = {
             'executor': executor,
             'registry': registry,
             'flow_def': flow_def,
             'flow_yaml': flow_yaml,
-            'project_dir': flow_dir
+            'project_dir': flow_dir,
+            'trigger_manager': trigger_manager
         }
 
         # Add project metadata if flow is part of a project
@@ -1007,6 +1200,87 @@ class MultiFlowServer:
             flow_data['file_watcher'] = file_watcher
 
             logger.info(f"   👁️  Watching: {flow_name} (flow.py, flow.yaml)")
+
+    def _setup_triggers(self):
+        """Setup triggers for all flows"""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        total_triggers = 0
+
+        # Setup triggers for each flow
+        for flow_name, flow_data in self.flows.items():
+            flow_def = flow_data['flow_def']
+            executor = flow_data['executor']
+            flow_yaml = flow_data['flow_yaml']
+            trigger_manager = flow_data.get('trigger_manager')
+
+            if not trigger_manager:
+                continue
+
+            # Parse triggers from flow definition
+            triggers_config = flow_def.get('triggers', [])
+
+            if not triggers_config:
+                continue  # No triggers defined for this flow
+
+            logger.info(f"📡 Setting up {len(triggers_config)} trigger(s) for flow {flow_name}")
+
+            # Create flow executor wrapper for triggers
+            def create_trigger_executor(flow_name, flow_yaml, executor):
+                """Create a closure that captures flow-specific data"""
+                async def trigger_flow_executor(inputs: Dict[str, Any]) -> Dict[str, Any]:
+                    """Wrapper function that triggers can call to execute the flow"""
+                    try:
+                        result = await executor.execute_flow(
+                            flow_yaml,
+                            inputs=inputs
+                        )
+                        return result
+                    except Exception as e:
+                        logger.exception(f"Error executing flow {flow_name} from trigger: {e}")
+                        return {
+                            'success': False,
+                            'error': str(e),
+                            'flow': flow_name
+                        }
+                return trigger_flow_executor
+
+            trigger_executor = create_trigger_executor(flow_name, flow_yaml, executor)
+
+            # Create triggers from configuration
+            for trigger_data in triggers_config:
+                try:
+                    trigger_config = TriggerConfig.from_dict(trigger_data)
+
+                    if not trigger_config.enabled:
+                        logger.info(f"   ⏸️  Skipping disabled trigger: {trigger_config.id or trigger_config.type}")
+                        continue
+
+                    trigger = trigger_manager.create_trigger(
+                        trigger_config,
+                        flow_name,
+                        trigger_executor
+                    )
+
+                    if trigger:
+                        # For webhook triggers, include their routers in the FastAPI app
+                        if trigger_config.type == 'webhook':
+                            from .triggers.webhook import WebhookTrigger
+                            if isinstance(trigger, WebhookTrigger):
+                                router = trigger.create_router()
+                                self.app.include_router(router)
+                                logger.info(f"   ✅ Webhook trigger registered: {trigger.method} {trigger.path}")
+                                total_triggers += 1
+                        else:
+                            logger.info(f"   ✅ Trigger registered: {trigger_config.type}")
+                            total_triggers += 1
+
+                except Exception as e:
+                    logger.error(f"   ❌ Failed to create trigger for {flow_name}: {e}")
+
+        if total_triggers > 0:
+            logger.info(f"\n📡 Total triggers registered across all flows: {total_triggers}")
 
     def _register_routes(self):
         """Register FastAPI routes for all flows"""
@@ -1427,7 +1701,13 @@ class MultiFlowServer:
             }
 
         @self.app.get("/flows/{flow_name}/visualize", tags=["Visualization"])
-        async def visualize_flow(flow_name: str):
+        async def visualize_flow(
+            flow_name: str,
+            format: str = Query(
+                default="json",
+                description="Output format: 'json' for Mermaid text (default) or 'html' for rendered diagram"
+            )
+        ):
             """
             Generate a Mermaid diagram visualization of the flow structure.
 
@@ -1437,6 +1717,9 @@ class MultiFlowServer:
             - Parallel execution
             - Conditional branching
             - Loops
+
+            Query Parameters:
+            - format: 'json' (default) returns Mermaid text, 'html' returns rendered HTML page
             """
             if flow_name not in self.flows:
                 available = ', '.join(self.flows.keys())
@@ -1454,16 +1737,120 @@ class MultiFlowServer:
                 visualizer = FlowVisualizer(flow_def)
                 diagram = visualizer.generate_mermaid()
 
-                return {
-                    "flow": flow_name,
-                    "diagram": diagram,
-                    "format": "mermaid"
-                }
+                if format.lower() == "html":
+                    # Load HTML template
+                    template_path = Path(__file__).parent / "templates" / "visualize.html"
+                    if not template_path.exists():
+                        raise HTTPException(
+                            status_code=500,
+                            detail="HTML template not found"
+                        )
+
+                    with open(template_path, 'r') as f:
+                        html_template = f.read()
+
+                    # Strip markdown code fence from diagram (Mermaid.js doesn't need it)
+                    diagram_clean = diagram.strip()
+                    if diagram_clean.startswith('```mermaid'):
+                        diagram_clean = diagram_clean[len('```mermaid'):].strip()
+                    if diagram_clean.endswith('```'):
+                        diagram_clean = diagram_clean[:-3].strip()
+
+                    # Replace template variables
+                    html_content = html_template.replace("{{flow_name}}", flow_name)
+                    html_content = html_content.replace("{{diagram}}", diagram_clean)
+
+                    return HTMLResponse(content=html_content)
+                else:
+                    # Default JSON response
+                    return {
+                        "flow": flow_name,
+                        "diagram": diagram,
+                        "format": "mermaid"
+                    }
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(
                     status_code=500,
                     detail=f"Error generating visualization: {str(e)}"
                 )
+
+        @self.app.get("/flows/{flow_name}/triggers", tags=["Triggers"])
+        async def list_triggers(flow_name: str):
+            """
+            List all triggers for a flow.
+
+            Returns information about all triggers configured for the flow including:
+            - Trigger ID
+            - Trigger type (webhook, schedule, etc.)
+            - Status (running, stopped)
+            - Configuration details
+            """
+            if flow_name not in self.flows:
+                available = ', '.join(self.flows.keys())
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Flow not found: {flow_name}. Available flows: {available}"
+                )
+
+            flow_data = self.flows[flow_name]
+            trigger_manager = flow_data.get('trigger_manager')
+
+            if not trigger_manager:
+                return {
+                    "flow": flow_name,
+                    "triggers": [],
+                    "count": 0
+                }
+
+            triggers = []
+            for trigger_id, trigger in trigger_manager.triggers.items():
+                status = trigger.get_status()
+                triggers.append(status)
+
+            return {
+                "flow": flow_name,
+                "triggers": triggers,
+                "count": len(triggers)
+            }
+
+        @self.app.get("/flows/{flow_name}/triggers/{trigger_id}", tags=["Triggers"])
+        async def get_trigger_status(flow_name: str, trigger_id: str):
+            """
+            Get detailed status of a specific trigger.
+
+            Returns:
+            - Trigger ID
+            - Trigger type
+            - Running status
+            - Configuration
+            - Statistics (execution count, last triggered, etc.)
+            """
+            if flow_name not in self.flows:
+                available = ', '.join(self.flows.keys())
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Flow not found: {flow_name}. Available flows: {available}"
+                )
+
+            flow_data = self.flows[flow_name]
+            trigger_manager = flow_data.get('trigger_manager')
+
+            if not trigger_manager:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No triggers configured for flow: {flow_name}"
+                )
+
+            trigger = trigger_manager.triggers.get(trigger_id)
+            if not trigger:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Trigger not found: {trigger_id}"
+                )
+
+            return trigger.get_status()
 
         # Project endpoints
         @self.app.get("/projects", tags=["Projects"])
