@@ -1,0 +1,1978 @@
+"""
+FlowLang Scaffolder - Automatically generate task stubs from flow definitions
+
+This tool implements a TDD-style approach: Define your flow first in YAML,
+then implement tasks one by one with automatic progress tracking.
+"""
+
+import yaml
+import os
+import re
+import shutil
+from pathlib import Path
+from typing import Dict, List, Set, Any, Optional
+from dataclasses import dataclass, field
+from datetime import datetime
+
+from .scaffolder_merge import CodeMerger, TestMerger, extract_implementation_status
+
+
+@dataclass
+class TaskInfo:
+    """Information about a task extracted from a flow"""
+    name: str
+    inputs: Set[str] = field(default_factory=set)
+    step_ids: List[str] = field(default_factory=list)
+    is_implemented: bool = False
+
+
+class FlowScaffolder:
+    """Generates task stubs, tests, and documentation from flow definitions"""
+
+    def __init__(self, output_dir: str = ".", force: bool = False, quiet: bool = False):
+        self.output_dir = Path(output_dir)
+        self.tasks: Dict[str, TaskInfo] = {}
+        self.flow_name = "UnnamedFlow"
+        self.flow_def = None  # Will store the flow definition for connection lookup
+        self.task_connections: Dict[str, str] = {}  # Map task_name -> connection_name
+        self.force = force  # If True, skip merge and overwrite everything
+        self.quiet = quiet  # If True, suppress verbose output
+        self.merge_summary = {
+            'tasks_preserved': 0,
+            'tasks_added': 0,
+            'tasks_updated': 0,
+            'tests_preserved': 0,
+            'tests_added': 0,
+            'tests_updated': 0,
+        }
+
+    def _print(self, *args, **kwargs):
+        """Print only if not in quiet mode"""
+        if not self.quiet:
+            print(*args, **kwargs)
+
+    def analyze_flow(self, flow_yaml: str) -> Dict[str, TaskInfo]:
+        """
+        Parse flow and extract all required tasks.
+
+        Args:
+            flow_yaml: YAML string containing flow definition
+
+        Returns:
+            Dictionary mapping task names to TaskInfo objects
+        """
+        flow_def = yaml.safe_load(flow_yaml)
+        self.flow_name = flow_def.get('flow', 'UnnamedFlow')
+        self.flow_def = flow_def  # Store for connection lookup
+
+        print(f"📊 Analyzing flow: {self.flow_name}")
+        print("="*60)
+
+        # Extract tasks from steps
+        steps = flow_def.get('steps', [])
+        self._extract_tasks_from_steps(steps)
+
+        # Extract tasks from flow-level on_cancel handler
+        if 'on_cancel' in flow_def:
+            self._extract_tasks_from_steps(flow_def['on_cancel'])
+
+        print(f"\n✓ Found {len(self.tasks)} unique tasks")
+        for task_name, task_info in sorted(self.tasks.items()):
+            print(f"  - {task_name} (used {len(task_info.step_ids)} times)")
+
+        return self.tasks
+
+    def _extract_tasks_from_steps(self, steps: List[Dict], depth: int = 0):
+        """Recursively extract tasks from step definitions"""
+        for step in steps:
+            # Direct task
+            if 'task' in step:
+                task_name = step['task']
+                step_id = step.get('id', task_name)
+                inputs = set(step.get('inputs', {}).keys())
+
+                # Capture connection if specified
+                connection_name = step.get('connection')
+                if connection_name:
+                    self.task_connections[task_name] = connection_name
+
+                if task_name not in self.tasks:
+                    self.tasks[task_name] = TaskInfo(
+                        name=task_name,
+                        inputs=inputs,
+                        step_ids=[step_id]
+                    )
+                else:
+                    # Task used multiple times, track all step IDs
+                    self.tasks[task_name].step_ids.append(step_id)
+                    # Merge inputs (union of all inputs across uses)
+                    self.tasks[task_name].inputs.update(inputs)
+
+                # Extract tasks from step-level on_error handler
+                if 'on_error' in step:
+                    self._extract_tasks_from_steps(step['on_error'], depth + 1)
+
+            # Parallel steps
+            elif 'parallel' in step:
+                self._extract_tasks_from_steps(step['parallel'], depth + 1)
+
+            # Conditional steps (both 'condition' and 'if' syntax)
+            elif 'condition' in step or 'if' in step:
+                condition = step.get('condition', step)
+                if 'then' in condition:
+                    self._extract_tasks_from_steps(condition['then'], depth + 1)
+                if 'else' in condition:
+                    self._extract_tasks_from_steps(condition['else'], depth + 1)
+
+            # Switch/case steps
+            elif 'switch' in step:
+                cases = step.get('cases', [])
+                for case in cases:
+                    # Extract from 'do' steps in each case
+                    if 'do' in case:
+                        self._extract_tasks_from_steps(case['do'], depth + 1)
+                    # Extract from 'default' case
+                    if 'default' in case:
+                        self._extract_tasks_from_steps(case['default'], depth + 1)
+
+            # Loop steps (both 'loop' and 'for_each' syntax)
+            elif 'loop' in step or 'for_each' in step:
+                loop = step.get('loop', step)
+                if 'do' in loop:
+                    self._extract_tasks_from_steps(loop['do'], depth + 1)
+
+    def generate_task_stubs(self, filename: str = "tasks.py") -> str:
+        """
+        Generate Python file with task stubs, preserving implemented tasks.
+
+        Args:
+            filename: Name of the output file
+
+        Returns:
+            Path to the generated file
+        """
+        output_path = self.output_dir / filename
+
+        print(f"\n📝 Generating task stubs: {output_path}")
+
+        # Check if file exists and not forcing overwrite
+        existing_merger = None
+        if output_path.exists() and not self.force:
+            print(f"  ℹ️  Existing file found - using smart merge to preserve implementations")
+
+            # Create backup on first merge
+            # Use output_path.name to get just the filename without directory path
+            backup_path = output_path.parent / f"{output_path.name}.backup"
+            if not backup_path.exists():
+                shutil.copy(output_path, backup_path)
+                print(f"  💾 Created backup: {backup_path}")
+
+            # Parse existing file
+            with open(output_path, 'r') as f:
+                existing_code = f.read()
+            existing_merger = CodeMerger(existing_code)
+
+        # Generate code (with or without merge)
+        code = self._generate_stubs_code_with_merge(existing_merger)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w') as f:
+            f.write(code)
+
+        if existing_merger:
+            print(f"  ✅ Preserved {self.merge_summary['tasks_preserved']} implemented tasks")
+            print(f"  🆕 Added {self.merge_summary['tasks_added']} new task stubs")
+            if self.merge_summary['tasks_updated'] > 0:
+                print(f"  ⚠️  {self.merge_summary['tasks_updated']} signatures updated - review manually")
+        else:
+            print(f"✓ Generated {len(self.tasks)} task stubs")
+
+        return str(output_path)
+
+    def _generate_stubs_code(self) -> str:
+        """Generate the Python code for task stubs"""
+        lines = [
+            '"""',
+            f'Task implementations for {self.flow_name}',
+            f'Auto-generated by FlowLang Scaffolder on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+            '',
+            'Status: All tasks are STUBS - implement them one by one!',
+            '',
+            'To implement a task:',
+            '1. Find the task function below',
+            '2. Remove the NotImplementedTaskError',
+            '3. Add your implementation',
+            '4. Update the implementation status in get_implementation_status()',
+            '5. Run tests: pytest tests/test_tasks.py',
+            '"""',
+            '',
+            'import asyncio',
+            'from typing import Dict, Any',
+            'from pathlib import Path',
+            'import sys',
+            '',
+            '# Add src to path for imports',
+            'sys.path.insert(0, str(Path(__file__).parent.parent / "src"))',
+            '',
+            'from flowlang import TaskRegistry',
+            'from flowlang.exceptions import NotImplementedTaskError',
+            '',
+            '',
+            'def create_task_registry() -> TaskRegistry:',
+            '    """Create and populate the task registry with all tasks"""',
+            '    registry = TaskRegistry()',
+            '    ',
+            '    # ========================================================================',
+            '    # TASK IMPLEMENTATIONS',
+            f'    # Total: {len(self.tasks)} tasks',
+            '    # Status: 0 implemented, {} pending'.format(len(self.tasks)),
+            '    # ========================================================================',
+            '    ',
+        ]
+
+        # Generate stub for each task
+        for task_name, task_info in sorted(self.tasks.items()):
+            lines.extend(self._generate_task_stub(task_name, task_info))
+
+        lines.extend([
+            '',
+            '    return registry',
+            '',
+            '',
+            '# ========================================================================',
+            '# IMPLEMENTATION TRACKER',
+            '# ========================================================================',
+            '',
+            'def get_implementation_status() -> Dict[str, Any]:',
+            '    """',
+            '    Get status of task implementations.',
+            '    ',
+            '    Update this as you implement tasks:',
+            '    Change False to True for each completed task.',
+            '    """',
+            '    tasks = {',
+        ])
+
+        for task_name in sorted(self.tasks.keys()):
+            lines.append(f"        '{task_name}': False,  # TODO: Set to True when implemented")
+
+        lines.extend([
+            '    }',
+            '    ',
+            '    implemented = sum(1 for v in tasks.values() if v)',
+            '    total = len(tasks)',
+            '    ',
+            '    return {',
+            "        'total': total,",
+            "        'implemented': implemented,",
+            "        'pending': total - implemented,",
+            "        'progress': f'{implemented}/{total}',",
+            "        'percentage': (implemented / total * 100) if total > 0 else 0,",
+            "        'tasks': tasks",
+            '    }',
+            '',
+            '',
+            'def print_status():',
+            '    """Print implementation status to console"""',
+            '    status = get_implementation_status()',
+            '    print("="*60)',
+            f'    print(f"📊 {self.flow_name} - Task Implementation Status")',
+            '    print("="*60)',
+            '    print(f"Total Tasks: {status[\'total\']}")',
+            '    print(f"Implemented: {status[\'implemented\']} ✅")',
+            '    print(f"Pending: {status[\'pending\']} ⚠️")',
+            '    print(f"Progress: {status[\'progress\']} ({status[\'percentage\']:.1f}%)")',
+            '    print("="*60)',
+            '    ',
+            '    if status[\'pending\'] > 0:',
+            '        print("\\n⚠️  Pending Tasks:")',
+            '        for task, implemented in sorted(status[\'tasks\'].items()):',
+            '            if not implemented:',
+            '                print(f"  [ ] {task}")',
+            '    ',
+            '    if status[\'implemented\'] > 0:',
+            '        print("\\n✅ Implemented Tasks:")',
+            '        for task, implemented in sorted(status[\'tasks\'].items()):',
+            '            if implemented:',
+            '                print(f"  [✓] {task}")',
+            '    ',
+            '    print()',
+            '',
+            '',
+            'if __name__ == \'__main__\':',
+            '    print_status()',
+        ])
+
+        return '\n'.join(lines)
+
+    def _generate_stubs_code_with_merge(self, existing_merger: Optional[CodeMerger]) -> str:
+        """
+        Generate task stubs code with smart merge support.
+
+        Args:
+            existing_merger: CodeMerger with existing file, or None for fresh generation
+
+        Returns:
+            Generated Python code
+        """
+        if not existing_merger:
+            # No existing file, generate normally
+            return self._generate_stubs_code()
+
+        # Extract existing implementation status
+        existing_status = extract_implementation_status(existing_merger.source_code)
+
+        # Generate header
+        lines = [
+            '"""',
+            f'Task implementations for {self.flow_name}',
+            f'Auto-generated by FlowLang Scaffolder on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+            '',
+            'Status: Mix of implemented tasks and stubs',
+            '',
+            'IMPORTANT: This file was generated with smart merge.',
+            'Your implemented tasks have been preserved.',
+            '"""',
+            '',
+            'import asyncio',
+            'from typing import Dict, Any',
+            'from pathlib import Path',
+            'import sys',
+            '',
+            '# Add src to path for imports',
+            'sys.path.insert(0, str(Path(__file__).parent.parent / "src"))',
+            '',
+            'from flowlang import TaskRegistry',
+            'from flowlang.exceptions import NotImplementedTaskError',
+            '',
+            '',
+            'def create_task_registry() -> TaskRegistry:',
+            '    """Create and populate the task registry with all tasks"""',
+            '    registry = TaskRegistry()',
+            '    ',
+            '    # ========================================================================',
+            '    # TASK IMPLEMENTATIONS',
+            f'    # Total: {len(self.tasks)} tasks',
+            '    # ========================================================================',
+            '    ',
+        ]
+
+        # Generate tasks with merge logic
+        for task_name, task_info in sorted(self.tasks.items()):
+            func_name = self._to_snake_case(task_name)
+
+            # Check if task was implemented in existing file
+            if existing_merger.is_function_implemented(func_name):
+                # Task is implemented - preserve it exactly
+                existing_body = existing_merger.get_function_body(func_name)
+                lines.append(existing_body)
+                lines.append('    ')
+                self.merge_summary['tasks_preserved'] += 1
+            else:
+                # Task is not implemented or is new - generate stub
+                if func_name in existing_merger.functions:
+                    # Exists but is a stub - might have signature change
+                    old_sig = existing_merger.get_function_signature(func_name)
+                    new_sig = ', '.join(sorted(task_info.inputs)) if task_info.inputs else '**kwargs'
+                    if old_sig != new_sig:
+                        self.merge_summary['tasks_updated'] += 1
+                else:
+                    # Brand new task
+                    self.merge_summary['tasks_added'] += 1
+
+                lines.extend(self._generate_task_stub(task_name, task_info))
+
+        lines.extend([
+            '',
+            '    return registry',
+            '',
+            '',
+            '# ========================================================================',
+            '# IMPLEMENTATION TRACKER',
+            '# ========================================================================',
+            '',
+            'def get_implementation_status() -> Dict[str, Any]:',
+            '    """',
+            '    Get status of task implementations.',
+            '    ',
+            '    Update this as you implement tasks:',
+            '    Change False to True for each completed task.',
+            '    """',
+            '    tasks = {',
+        ])
+
+        # Generate implementation status, preserving existing True values
+        for task_name in sorted(self.tasks.keys()):
+            is_implemented = existing_status.get(task_name, False)
+            status_str = 'True' if is_implemented else 'False'
+            comment = '# Implemented' if is_implemented else '# TODO: Set to True when implemented'
+            lines.append(f"        '{task_name}': {status_str},  {comment}")
+
+        lines.extend([
+            '    }',
+            '    ',
+            '    implemented = sum(1 for v in tasks.values() if v)',
+            '    total = len(tasks)',
+            '    ',
+            '    return {',
+            "        'total': total,",
+            "        'implemented': implemented,",
+            "        'pending': total - implemented,",
+            "        'progress': f'{implemented}/{total}',",
+            "        'percentage': (implemented / total * 100) if total > 0 else 0,",
+            "        'tasks': tasks",
+            '    }',
+            '',
+            '',
+            'def print_status():',
+            '    """Print implementation status to console"""',
+            '    status = get_implementation_status()',
+            '    print("="*60)',
+            f'    print(f"📊 {self.flow_name} - Task Implementation Status")',
+            '    print("="*60)',
+            '    print(f"Total Tasks: {status[\'total\']}")',
+            '    print(f"Implemented: {status[\'implemented\']} ✅")',
+            '    print(f"Pending: {status[\'pending\']} ⚠️")',
+            '    print(f"Progress: {status[\'progress\']} ({status[\'percentage\']:.1f}%)")',
+            '    print("="*60)',
+            '    ',
+            '    if status[\'pending\'] > 0:',
+            '        print("\\n⚠️  Pending Tasks:")',
+            '        for task, implemented in sorted(status[\'tasks\'].items()):',
+            '            if not implemented:',
+            '                print(f"  [ ] {task}")',
+            '    ',
+            '    if status[\'implemented\'] > 0:',
+            '        print("\\n✅ Implemented Tasks:")',
+            '        for task, implemented in sorted(status[\'tasks\'].items()):',
+            '            if implemented:',
+            '                print(f"  [✓] {task}")',
+            '    ',
+            '    print()',
+            '',
+            '',
+            'if __name__ == \'__main__\':',
+            '    print_status()',
+        ])
+
+        return '\n'.join(lines)
+
+    def _get_connection_usage_example(self, task_name: str) -> Optional[str]:
+        """
+        Get usage example for connection used by this task.
+
+        Args:
+            task_name: Name of the task
+
+        Returns:
+            Usage example string from connection plugin, or None if no connection
+        """
+        # Check if task uses a connection
+        connection_name = self.task_connections.get(task_name)
+        if not connection_name:
+            return None
+
+        # Get connection definition from flow
+        if not self.flow_def or 'connections' not in self.flow_def:
+            return None
+
+        conn_def = self.flow_def['connections'].get(connection_name)
+        if not conn_def:
+            return None
+
+        conn_type = conn_def.get('type')
+        if not conn_type:
+            return None
+
+        # Try to load the connection plugin and get usage example
+        try:
+            # Import plugin registry
+            import sys
+            from pathlib import Path
+
+            # Add src to path if needed
+            src_path = Path(__file__).parent.parent
+            if str(src_path) not in sys.path:
+                sys.path.insert(0, str(src_path))
+
+            from flowlang.connections import plugin_registry
+
+            # Get the plugin from registry
+            plugin = plugin_registry.get(conn_type)
+
+            if plugin and hasattr(plugin, 'get_usage_example'):
+                return plugin.get_usage_example()
+
+        except Exception as e:
+            # Silently fail - not critical for scaffolding
+            print(f"  ⚠️  Could not load usage example for {conn_type} connection: {e}")
+
+        return None
+
+    def _generate_task_stub(self, task_name: str, task_info: TaskInfo) -> List[str]:
+        """Generate stub code for a single task"""
+        # Determine if task should be async based on name patterns
+        async_patterns = [
+            'send', 'fetch', 'get', 'post', 'put', 'delete',
+            'process', 'create', 'update', 'call', 'query',
+            'read', 'write', 'check', 'validate', 'calculate'
+        ]
+        is_async = any(word in task_name.lower() for word in async_patterns)
+
+        async_prefix = 'async ' if is_async else ''
+
+        # Generate parameter list - include connection if task uses one
+        params_list = list(sorted(task_info.inputs))
+        connection_name = self.task_connections.get(task_name)
+        if connection_name:
+            params_list.append('connection=None')
+
+        if params_list:
+            params = ', '.join(params_list)
+        else:
+            params = '**kwargs'
+
+        # Generate docstring with usage info
+        usage_info = f"Used in steps: {', '.join(task_info.step_ids[:3])}"
+        if len(task_info.step_ids) > 3:
+            usage_info += f" (+{len(task_info.step_ids) - 3} more)"
+
+        func_name = self._to_snake_case(task_name)
+
+        lines = [
+            f"    @registry.register('{task_name}', description='TODO: Add description', implemented=False)",
+            f"    {async_prefix}def {func_name}({params}):",
+            f'        """',
+            f'        {task_name} - TODO: Add detailed description',
+            f'        ',
+            f'        {usage_info}',
+            f'        ',
+        ]
+
+        # Add connection info if task uses a connection
+        if connection_name:
+            conn_type = None
+            if self.flow_def and 'connections' in self.flow_def:
+                conn_def = self.flow_def['connections'].get(connection_name)
+                if conn_def:
+                    conn_type = conn_def.get('type')
+
+            lines.append(f'        Connection: {connection_name} (type: {conn_type or "unknown"})')
+            lines.append(f'        ')
+
+            # Get usage example from plugin
+            usage_example = self._get_connection_usage_example(task_name)
+            if usage_example:
+                lines.append(f'        Connection Usage Example:')
+                lines.append(usage_example)
+                lines.append(f'        ')
+
+        if task_info.inputs:
+            lines.append(f'        Args:')
+            for inp in sorted(task_info.inputs):
+                lines.append(f'            {inp}: TODO: Describe this parameter')
+            if connection_name:
+                lines.append(f'            connection: Connection object (injected by executor)')
+            lines.append('        ')
+
+        lines.extend([
+            f'        Returns:',
+            f'            Dict containing task results',
+            f'        ',
+            f'        Raises:',
+            f'            NotImplementedTaskError: This task is not yet implemented',
+            f'        """',
+            f'        # TODO: Implement this task',
+            f'        # ',
+            f'        # Example implementation:',
+            f'        # result = do_something({params})',
+            f'        # return {{"result": result}}',
+            f'        ',
+            f'        raise NotImplementedTaskError("{task_name}")',
+            f'    ',
+        ])
+
+        return lines
+
+    def _to_snake_case(self, name: str) -> str:
+        """Convert PascalCase/camelCase to snake_case"""
+        # Insert underscore before uppercase letters
+        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+        # Insert underscore before uppercase letters preceded by lowercase
+        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+    def _to_pascal_case(self, name: str) -> str:
+        """Convert snake_case or kebab-case to PascalCase
+
+        Examples:
+            test -> Test
+            example_name -> ExampleName
+            user-auth -> UserAuth
+            my_flow_name -> MyFlowName
+        """
+        # Split on underscores or hyphens
+        words = name.replace('-', '_').split('_')
+        # Capitalize first letter of each word
+        return ''.join(word.capitalize() for word in words if word)
+
+    def generate_tests(self, filename: str = "test_tasks.py") -> str:
+        """
+        Generate test file for all tasks, preserving implemented tests.
+
+        Args:
+            filename: Name of the output file
+
+        Returns:
+            Path to the generated file
+        """
+        output_path = self.output_dir / filename
+
+        print(f"\n🧪 Generating test stubs: {output_path}")
+
+        # Check if file exists and not forcing overwrite
+        existing_test_merger = None
+        if output_path.exists() and not self.force:
+            print(f"  ℹ️  Existing test file found - using smart merge to preserve implemented tests")
+
+            # Create backup on first merge
+            # Use output_path.name to get just the filename without directory path
+            backup_path = output_path.parent / f"{output_path.name}.backup"
+            if not backup_path.exists():
+                shutil.copy(output_path, backup_path)
+                print(f"  💾 Created backup: {backup_path}")
+
+            # Parse existing test file
+            with open(output_path, 'r') as f:
+                existing_test_code = f.read()
+            existing_test_merger = TestMerger(existing_test_code)
+
+        # Generate code (with or without merge)
+        code = self._generate_tests_code_with_merge(existing_test_merger)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w') as f:
+            f.write(code)
+
+        if existing_test_merger:
+            print(f"  ✅ Preserved {self.merge_summary['tests_preserved']} implemented tests")
+            print(f"  🆕 Added {self.merge_summary['tests_added']} new test stubs")
+            if self.merge_summary['tests_updated'] > 0:
+                print(f"  ⚠️  {self.merge_summary['tests_updated']} test signatures updated - review manually")
+        else:
+            print(f"✓ Generated tests for {len(self.tasks)} tasks")
+
+        return str(output_path)
+
+    def _generate_tests_code(self) -> str:
+        """Generate test code using FlowTest framework"""
+        lines = [
+            '"""',
+            f'Tests for {self.flow_name}',
+            f'Auto-generated by FlowLang Scaffolder on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+            '',
+            'This test file uses the FlowTest framework for flow testing.',
+            'FlowTest provides:',
+            '  - Flow execution with load_flow() and execute_flow()',
+            '  - Task mocking with mock_task()',
+            '  - Assertion helpers (assert_success, assert_output_equals, etc.)',
+            '  - Call tracking (assert_task_called, get_task_call_args, etc.)',
+            '',
+            'See: https://github.com/hello-adam-martin/FlowLang/docs/testing.md',
+            '"""',
+            '',
+            'import pytest',
+            'import sys',
+            'from pathlib import Path',
+            '',
+            '# Add parent directory to path for flow module import',
+            'sys.path.insert(0, str(Path(__file__).parent.parent))',
+            '',
+            'from flowlang.testing import FlowTest',
+            'from flowlang.exceptions import NotImplementedTaskError',
+            '',
+            '',
+            '# ========================================================================',
+            '# FLOW TESTS',
+            '# ========================================================================',
+            '',
+            f'class Test{self._to_pascal_case(self.flow_name)}(FlowTest):',
+            '    """',
+            f'    Test suite for {self.flow_name} flow',
+            '    ',
+            '    This class uses FlowTest to test the complete flow execution.',
+            '    You can test with real tasks or mock specific tasks for isolated testing.',
+            '    """',
+            '    ',
+            '    flow_path = str(Path(__file__).parent.parent / "flow.yaml")',
+            '    tasks_file = str(Path(__file__).parent.parent / "flow.py")',
+            '    ',
+            '    @pytest.mark.asyncio',
+            '    async def test_flow_with_mocked_tasks(self):',
+            '        """',
+            '        Test flow execution with all tasks mocked',
+            '        ',
+            '        This test verifies the flow structure without requiring',
+            '        task implementations. Update this as you implement tasks.',
+            '        """',
+            '        await self.setup_method()',
+            '        ',
+            '        # Mock all tasks to avoid NotImplementedTaskError',
+
+        ]
+
+        # Add mock for each task
+        for task_name in sorted(self.tasks.keys()):
+            lines.append(f"        self.mock_task('{task_name}', return_value={{'output': 'mocked_output'}})")
+
+        lines.extend([
+            '        ',
+            '        # TODO: Update test inputs based on your flow definition',
+            '        inputs = {}  # Add your flow inputs here',
+            '        ',
+            '        # Execute flow',
+            '        result = await self.execute_flow(inputs)',
+            '        ',
+            '        # Verify flow executed successfully',
+            '        self.assert_success(result)',
+            '        ',
+            '        # TODO: Add assertions for specific outputs',
+            '        # self.assert_output_equals(result, "output_key", "expected_value")',
+            '        ',
+            '        # Verify tasks were called',
+        ])
+
+        # Add task call assertions
+        for task_name in sorted(self.tasks.keys()):
+            lines.append(f"        # self.assert_task_called('{task_name}', times=1)")
+
+        lines.extend([
+            '    ',
+            '    @pytest.mark.skip(reason="Remove this skip when tasks are implemented")',
+            '    @pytest.mark.asyncio',
+            '    async def test_flow_with_real_tasks(self):',
+            '        """',
+            '        Test flow execution with real task implementations',
+            '        ',
+            '        Remove the @pytest.mark.skip decorator once tasks are implemented.',
+            '        This test runs the actual flow without mocks.',
+            '        """',
+            '        await self.setup_method()',
+            '        ',
+            '        # TODO: Update test inputs based on your flow definition',
+            '        inputs = {',
+            '            # Add your flow inputs here',
+            '        }',
+            '        ',
+            '        # Execute flow with real tasks',
+            '        result = await self.execute_flow(inputs)',
+            '        ',
+            '        # Verify success',
+            '        self.assert_success(result)',
+            '        ',
+            '        # TODO: Add specific output assertions',
+            '        # self.assert_output_equals(result, "result_key", "expected_value")',
+            '        # self.assert_output_contains(result, "message", "expected substring")',
+            '        ',
+            '        # Check execution time if needed',
+            '        # self.assert_execution_time_under(5.0)  # seconds',
+            '    ',
+            '    @pytest.mark.asyncio',
+            '    async def test_flow_with_partial_mocking(self):',
+            '        """',
+            '        Example: Test flow with some tasks real and some mocked',
+            '        ',
+            '        This pattern is useful when you want to test specific tasks',
+            '        while mocking external dependencies.',
+            '        """',
+            '        await self.setup_method()',
+            '        ',
+            '        # Mock only external/expensive tasks',
+            '        # Example:',
+            '        # self.mock_task("SendEmail", return_value={"sent": True})',
+            '        # self.mock_task("CallExternalAPI", return_value={"data": "mocked"})',
+            '        ',
+            '        # Skip this test for now',
+            '        pytest.skip("Remove this skip and add your partial mocking logic")',
+            '',
+            '',
+        ])
+
+        return '\n'.join(lines)
+
+    def _generate_tests_code_with_merge(self, existing_test_merger: Optional[TestMerger]) -> str:
+        """
+        Generate test code with smart merge support.
+
+        Args:
+            existing_test_merger: TestMerger with existing test file, or None for fresh generation
+
+        Returns:
+            Generated test code
+        """
+        if not existing_test_merger:
+            # No existing file, generate normally
+            return self._generate_tests_code()
+
+        # Generate header
+        lines = [
+            '"""',
+            f'Tests for {self.flow_name} tasks',
+            f'Auto-generated by FlowLang Scaffolder on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+            '',
+            'IMPORTANT: This file was generated with smart merge.',
+            'Implemented tests have been preserved.',
+            '"""',
+            '',
+            'import pytest',
+            'import asyncio',
+            'import sys',
+            'from pathlib import Path',
+            '',
+            '# Add parent directory to path for flow module import',
+            'sys.path.insert(0, str(Path(__file__).parent.parent))',
+            '',
+            'from flow import create_task_registry',
+            'from flowlang.exceptions import NotImplementedTaskError',
+            '',
+            '',
+            '@pytest.fixture',
+            'def registry():',
+            '    """Fixture providing task registry"""',
+            '    return create_task_registry()',
+            '',
+            '',
+            '# ========================================================================',
+            '# TASK TESTS',
+            '# ========================================================================',
+            '',
+        ]
+
+        # Generate tests with merge logic
+        for task_name, task_info in sorted(self.tasks.items()):
+            func_name = self._to_snake_case(task_name)
+            test_name = f'test_{func_name}'
+
+            # Check if test was implemented in existing file
+            # TestMerger uses is_function_implemented (inherited from CodeMerger)
+            if existing_test_merger.is_function_implemented(test_name):
+                # Test is implemented - preserve it exactly
+                existing_test_body = existing_test_merger.get_function_body(test_name)
+                lines.append(existing_test_body)
+                lines.append('')
+                self.merge_summary['tests_preserved'] += 1
+            else:
+                # Test is not implemented or is new - generate stub
+                if test_name in existing_test_merger.functions:
+                    # Exists but is a stub
+                    # Note: Not checking signature changes for tests as they're more complex
+                    pass
+                else:
+                    # Brand new test
+                    self.merge_summary['tests_added'] += 1
+
+                lines.extend(self._generate_task_test(task_name, task_info))
+
+        lines.extend([
+            '',
+            '# ========================================================================',
+            '# INTEGRATION TESTS',
+            '# ========================================================================',
+            '',
+            'def test_all_tasks_registered(registry):',
+            '    """Verify all tasks are registered"""',
+            '    expected_tasks = [',
+        ])
+
+        for task_name in sorted(self.tasks.keys()):
+            lines.append(f"        '{task_name}',")
+
+        lines.extend([
+            '    ]',
+            '    ',
+            '    for task in expected_tasks:',
+            '        assert registry.has_task(task), f"Task {task} not registered"',
+            '',
+            '',
+            'def test_implementation_progress(registry):',
+            '    """Track implementation progress"""',
+            '    from flow import get_implementation_status',
+            '    ',
+            '    status = get_implementation_status()',
+            '    print(f"\\nImplementation progress: {status[\'progress\']} ({status[\'percentage\']:.1f}%)")',
+            '    ',
+            '    # This test always passes but shows progress',
+            '    assert status[\'total\'] > 0',
+            '',
+            '',
+            'if __name__ == \'__main__\':',
+            '    pytest.main([__file__, \'-v\'])',
+        ])
+
+        return '\n'.join(lines)
+
+    def _generate_task_test(self, task_name: str, task_info: TaskInfo) -> List[str]:
+        """Generate test for a single task"""
+        async_patterns = [
+            'send', 'fetch', 'get', 'post', 'put', 'delete',
+            'process', 'create', 'update', 'call', 'query',
+            'read', 'write', 'check', 'validate', 'calculate'
+        ]
+        is_async = any(word in task_name.lower() for word in async_patterns)
+
+        # Build decorators
+        decorators = []
+        decorators.append('@pytest.mark.skip(reason="Task not yet implemented")')
+        if is_async:
+            decorators.append('@pytest.mark.asyncio')
+
+        async_prefix = 'async ' if is_async else ''
+        await_prefix = 'await ' if is_async else ''
+
+        func_name = self._to_snake_case(task_name)
+
+        # Generate sample inputs
+        sample_inputs = {}
+        for inp in sorted(task_info.inputs):
+            inp_lower = inp.lower()
+            if 'email' in inp_lower:
+                sample_inputs[inp] = 'test@example.com'
+            elif 'name' in inp_lower:
+                sample_inputs[inp] = 'Test Name'
+            elif 'id' in inp_lower:
+                sample_inputs[inp] = 'test_id_123'
+            elif 'amount' in inp_lower or 'price' in inp_lower:
+                sample_inputs[inp] = 100.0
+            elif 'date' in inp_lower:
+                sample_inputs[inp] = '2025-01-01'
+            elif 'url' in inp_lower:
+                sample_inputs[inp] = 'https://example.com'
+            elif 'count' in inp_lower or 'num' in inp_lower:
+                sample_inputs[inp] = 10
+            else:
+                sample_inputs[inp] = 'test_value'
+
+        # Generate two versions of inputs_str:
+        # 1. For initial variable definitions (with literal values)
+        # 2. For task calls (using the variables)
+        inputs_str_literals = ', '.join(f'{k}={repr(v)}' for k, v in sample_inputs.items())
+        inputs_str_vars = ', '.join(f'{k}={k}' for k in sample_inputs.keys())
+
+        lines = []
+        for decorator in decorators:
+            lines.append(decorator)
+        lines.extend([
+            f'{async_prefix}def test_{func_name}(registry):',
+            f'    """',
+            f'    Test {task_name} task',
+            f'    ',
+            f'    This test is skipped until the task is implemented.',
+            f'    ',
+            f'    After implementing the task:',
+            f'    1. Remove the @pytest.mark.skip decorator',
+            f'    2. Update this test to verify:',
+            f'       - Correct output structure',
+            f'       - Expected values',
+            f'       - Error handling',
+            f'    """',
+            f'    # Get the task',
+            f'    task = registry.get_task(\'{task_name}\')',
+            f'    ',
+        ])
+
+        # Define test input variables
+        if sample_inputs:
+            lines.append(f'    # Test inputs')
+            for key, value in sample_inputs.items():
+                lines.append(f'    {key} = {repr(value)}')
+            lines.append(f'    ')
+
+        lines.extend([
+            f'    # Currently expecting NotImplementedTaskError',
+            f'    with pytest.raises(NotImplementedTaskError):',
+        ])
+
+        if is_async:
+            lines.append(f'        {await_prefix}task({inputs_str_vars})')
+        else:
+            lines.append(f'        task({inputs_str_vars})')
+
+        lines.extend([
+            f'    ',
+            f'    # TODO: After implementing, replace above with actual assertions:',
+            f'    # result = {await_prefix}task({inputs_str_vars})',
+            f'    # assert isinstance(result, dict)',
+            f'    # assert "expected_key" in result',
+            f'    # assert result["expected_key"] == expected_value',
+            '',
+        ])
+
+        return lines
+
+    def generate_readme(self, filename: str = "README.md") -> str:
+        """
+        Generate README with implementation guide.
+
+        Args:
+            filename: Name of the output file
+
+        Returns:
+            Path to the generated file
+        """
+        output_path = self.output_dir / filename
+
+        print(f"\n📖 Generating README: {output_path}")
+
+        # Generate flow visualization
+        flow_diagram = ""
+        try:
+            from .visualizer import FlowVisualizer
+            flow_path = self.output_dir / 'flow.yaml'
+            if flow_path.exists():
+                with open(flow_path, 'r') as f:
+                    flow_def = yaml.safe_load(f)
+                visualizer = FlowVisualizer(flow_def)
+                flow_diagram = visualizer.generate_mermaid()
+                print(f"  ✓ Generated flow visualization diagram")
+        except Exception as e:
+            print(f"  ⚠️  Could not generate visualization: {e}")
+            flow_diagram = ""
+
+        content = f"""# {self.flow_name} - Implementation Guide
+
+Auto-generated by FlowLang Scaffolder on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Overview
+
+This project contains a flow definition and scaffolded task implementations. All tasks are currently **stubs** that need to be implemented.
+
+## Flow Visualization
+
+{flow_diagram if flow_diagram else "_(Visualization not available)_"}
+
+## Project Structure
+
+```
+.
+├── flow.yaml           # Flow definition (copy from source YAML)
+├── flow.py             # Task implementations (TODO: implement these)
+├── api.py              # FastAPI app export
+├── README.md           # This file
+├── tools/              # Scripts and utilities
+│   └── start_server.sh # Start API server
+└── tests/              # Test files
+    └── test_tasks.py   # Unit tests for tasks
+```
+
+**Note**: This project was generated from a source YAML template. To regenerate or update:
+- Edit the source YAML file (e.g., `flows/your_flow.yaml`)
+- Run: `python -m flowlang.scaffolder auto flows/your_flow.yaml`
+- Or from project root: `./generate_flows.sh` (processes all flows)
+
+## Implementation Status
+
+- **Total tasks**: {len(self.tasks)}
+- **Implemented**: 0
+- **Pending**: {len(self.tasks)}
+- **Progress**: 0/{len(self.tasks)} (0.0%)
+
+## Quick Start
+
+### 1. Check Current Status
+
+```bash
+python flow.py
+```
+
+This shows which tasks are pending implementation.
+
+### 2. Implement Tasks One by One
+
+Each task in `flow.py` currently raises `NotImplementedTaskError`. Implement them incrementally:
+
+```python
+@registry.register('TaskName')
+async def task_name(param1, param2):
+    # Remove this line:
+    # raise NotImplementedTaskError("TaskName")
+
+    # Add your implementation:
+    result = do_something(param1, param2)
+
+    return {{
+        'output_key': result
+    }}
+```
+
+### 3. Update Implementation Status
+
+After implementing a task, update `get_implementation_status()` in `flow.py`:
+
+```python
+def get_implementation_status() -> Dict[str, Any]:
+    tasks = {{
+        'TaskName': True,  # ← Changed from False to True
+        ...
+    }}
+```
+
+### 4. Run Tests
+
+```bash
+# Run all tests
+pytest tests/test_tasks.py -v
+
+# Run specific test
+pytest tests/test_tasks.py::test_task_name -v
+```
+
+Update tests to verify actual behavior instead of expecting `NotImplementedTaskError`.
+
+### 5. Run the Complete Flow
+
+Once all tasks are implemented:
+
+```python
+import asyncio
+from flowlang import FlowExecutor
+from flow import create_task_registry
+
+async def main():
+    # Load flow
+    with open('flow.yaml') as f:
+        flow_yaml = f.read()
+
+    # Create executor
+    registry = create_task_registry()
+    executor = FlowExecutor(registry)
+
+    # Execute flow
+    result = await executor.execute_flow(
+        flow_yaml,
+        inputs={{
+            # Your flow inputs here
+        }}
+    )
+
+    print(f"Success: {{result['success']}}")
+    print(f"Outputs: {{result['outputs']}}")
+
+if __name__ == '__main__':
+    asyncio.run(main())
+```
+
+## Task List
+
+"""
+
+        for i, (task_name, task_info) in enumerate(sorted(self.tasks.items()), 1):
+            content += f"\n### {i}. {task_name}\n\n"
+            content += f"- **Status**: ⚠️ Not implemented\n"
+            content += f"- **Function**: `{self._to_snake_case(task_name)}`\n"
+            content += f"- **Used in**: {', '.join(task_info.step_ids[:3])}"
+            if len(task_info.step_ids) > 3:
+                content += f" (+{len(task_info.step_ids) - 3} more)"
+            content += "\n"
+            if task_info.inputs:
+                content += f"- **Inputs**: `{', '.join(sorted(task_info.inputs))}`\n"
+            content += "\n"
+
+        content += """
+## Development Tips
+
+1. **Start with simple tasks** - Implement logging, validation tasks first
+2. **Use TDD approach** - Write/update tests as you implement
+3. **Check progress frequently** - Run `python flow.py` to see status
+4. **Test incrementally** - Test each task as you complete it
+5. **Mock external dependencies** - Use mock data initially, integrate real APIs later
+
+## Testing Strategy
+
+- **Unit tests**: Test each task in isolation (test_tasks.py)
+- **Integration tests**: Test the complete flow execution
+- **Use fixtures**: Create reusable test data
+- **Mock external calls**: Don't depend on external services in tests
+
+## Next Steps
+
+- [ ] Implement all task stubs
+- [ ] Write comprehensive tests
+- [ ] Integrate with external APIs/databases
+- [ ] Add error handling and retries
+- [ ] Add logging and monitoring
+- [ ] Deploy to production
+
+## Getting Help
+
+- FlowLang documentation: See CLAUDE.md
+- Flow syntax: Check flow.yaml for examples
+- Task registry: See src/flowlang/registry.py
+
+Good luck! 🚀
+"""
+
+        with open(output_path, 'w') as f:
+            f.write(content)
+
+        print(f"✓ Generated README")
+        return str(output_path)
+
+    def generate_api(self, filename: str = "api.py") -> str:
+        """
+        Generate FastAPI app export file.
+
+        Args:
+            filename: Name of the output file
+
+        Returns:
+            Path to the generated file
+        """
+        output_path = self.output_dir / filename
+
+        print(f"\n🚀 Generating API file: {output_path}")
+
+        content = f'''"""
+{self.flow_name} API - FastAPI app instance
+
+This module creates the FastAPI app that can be run with uvicorn directly:
+    uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+
+Hot reload will automatically reload tasks and flow definitions when files change!
+"""
+
+import sys
+import os
+from pathlib import Path
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+
+from flowlang.server import FlowServer
+
+# Check if running with uvicorn reload
+# When uvicorn uses --reload, it sets PYTHONPATH and runs with watchfiles
+enable_hot_reload = os.getenv('UVICORN_RELOAD', 'false').lower() == 'true' or '--reload' in sys.argv
+
+# Create the server and get the FastAPI app
+server = FlowServer(
+    project_dir=".",
+    title="{self.flow_name} API",
+    version="1.0.0",
+    enable_hot_reload=True  # Enable hot reload for development
+)
+
+# Export the app for uvicorn
+app = server.app
+'''
+
+        with open(output_path, 'w') as f:
+            f.write(content)
+
+        print(f"✓ Generated API file")
+        return str(output_path)
+
+    def _extract_env_variables(self) -> Dict[str, Dict[str, str]]:
+        """
+        Extract environment variables from flow connections.
+
+        Returns:
+            Dict mapping env var names to their metadata (connection type, description)
+        """
+        env_vars = {}
+
+        if not self.flow_def or 'connections' not in self.flow_def:
+            return env_vars
+
+        connections = self.flow_def['connections']
+
+        for conn_name, conn_def in connections.items():
+            conn_type = conn_def.get('type', 'unknown')
+
+            # Extract all values that reference environment variables
+            for key, value in conn_def.items():
+                if isinstance(value, str) and value.startswith('${env.') and value.endswith('}'):
+                    # Extract env var name: ${env.VAR_NAME} -> VAR_NAME
+                    env_var_name = value[6:-1]  # Remove ${env. and }
+
+                    if env_var_name not in env_vars:
+                        env_vars[env_var_name] = {
+                            'connection': conn_name,
+                            'type': conn_type,
+                            'field': key,
+                            'example': f'your_{key.lower()}_here'
+                        }
+
+        return env_vars
+
+    def generate_env_example(self) -> str:
+        """
+        Generate .env.example file with environment variables from connections.
+
+        Returns:
+            Path to the generated file
+        """
+        output_path = self.output_dir / ".env.example"
+
+        env_vars = self._extract_env_variables()
+
+        if not env_vars:
+            # No environment variables needed
+            return None
+
+        print(f"\n📄 Generating .env.example: {output_path}")
+
+        lines = [
+            f"# Environment Variables for {self.flow_name}",
+            f"# Generated by FlowLang Scaffolder on {datetime.now().strftime('%Y-%m-%d')}",
+            "",
+            "# Copy this file to .env and fill in your actual values:",
+            "# cp .env.example .env",
+            "",
+        ]
+
+        # Group by connection type for better organization
+        connections_vars = {}
+        for var_name, var_info in sorted(env_vars.items()):
+            conn_name = var_info['connection']
+            if conn_name not in connections_vars:
+                connections_vars[conn_name] = []
+            connections_vars[conn_name].append((var_name, var_info))
+
+        # Generate sections for each connection
+        for conn_name, vars_list in sorted(connections_vars.items()):
+            conn_type = vars_list[0][1]['type']
+            lines.append(f"# {conn_name.title()} Connection ({conn_type})")
+
+            for var_name, var_info in vars_list:
+                field = var_info['field']
+                example = var_info['example']
+
+                # Add helpful comments based on field name
+                if 'api_key' in field.lower() or 'token' in field.lower():
+                    lines.append(f"# Get this from your {conn_type.title()} account settings")
+                elif 'base_id' in field.lower():
+                    lines.append(f"# Find this in your {conn_type.title()} base URL")
+                elif 'url' in field.lower():
+                    lines.append(f"# Connection URL for {conn_type}")
+
+                lines.append(f"{var_name}={example}")
+                lines.append("")
+
+            lines.append("")
+
+        # Add example section at the end
+        lines.extend([
+            "# Example values (replace with your actual values):",
+        ])
+
+        for var_name, var_info in sorted(env_vars.items()):
+            field = var_info['field']
+            if 'api_key' in field.lower():
+                lines.append(f"# {var_name}=sk_test_1234567890abcdefghijklmnopqrstuvwxyz")
+            elif 'base_id' in field.lower():
+                lines.append(f"# {var_name}=appABCDEFGHIJKLMN")
+            elif 'url' in field.lower() and 'postgres' in var_info['type'].lower():
+                lines.append(f"# {var_name}=postgresql://user:password@localhost:5432/dbname")
+            elif 'url' in field.lower() and 'mongodb' in var_info['type'].lower():
+                lines.append(f"# {var_name}=mongodb://localhost:27017/dbname")
+            elif 'url' in field.lower() and 'redis' in var_info['type'].lower():
+                lines.append(f"# {var_name}=redis://localhost:6379/0")
+
+        with open(output_path, 'w') as f:
+            f.write('\n'.join(lines))
+
+        print(f"✓ Generated .env.example with {len(env_vars)} environment variables")
+        return str(output_path)
+
+    def generate_gitignore(self) -> str:
+        """
+        Generate .gitignore file to exclude sensitive files.
+
+        Returns:
+            Path to the generated file
+        """
+        output_path = self.output_dir / ".gitignore"
+
+        print(f"\n📄 Generating .gitignore: {output_path}")
+
+        content = """# Environment variables (contains secrets)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+myenv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+*.backup
+"""
+
+        with open(output_path, 'w') as f:
+            f.write(content)
+
+        print(f"✓ Generated .gitignore")
+        return str(output_path)
+
+    def generate_tools(self) -> str:
+        """
+        Generate tools/ directory with utility scripts.
+
+        Returns:
+            Path to the generated directory
+        """
+        tools_dir = self.output_dir / "tools"
+        tools_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"\n🔧 Generating tools directory: {tools_dir}")
+
+        # Generate start_server.sh script
+        start_server_sh_content = f'''#!/bin/bash
+# Start {self.flow_name} API Server
+# Usage: ./start_server.sh [--reload]
+
+cd "$(dirname "$0")/.."  # Move to project root
+
+echo "========================================"
+echo "Starting {self.flow_name} API Server..."
+echo "========================================"
+echo ""
+
+# Activate virtual environment if it exists
+# Check common locations: ../../myenv (FlowLang root), ../myenv, ./myenv
+VENV_ACTIVATED=false
+if [ -d "../../myenv" ]; then
+    echo "🐍 Activating virtual environment: ../../myenv"
+    source ../../myenv/bin/activate
+    VENV_ACTIVATED=true
+elif [ -d "../myenv" ]; then
+    echo "🐍 Activating virtual environment: ../myenv"
+    source ../myenv/bin/activate
+    VENV_ACTIVATED=true
+elif [ -d "myenv" ]; then
+    echo "🐍 Activating virtual environment: ./myenv"
+    source myenv/bin/activate
+    VENV_ACTIVATED=true
+else
+    echo "⚠️  No virtual environment found"
+    echo "   Checked: ../../myenv, ../myenv, ./myenv"
+    echo "   Continuing without virtual environment..."
+fi
+
+# Check if dependencies are installed
+if ! python -c "import fastapi" 2>/dev/null; then
+    echo "❌ FastAPI not installed. Installing dependencies..."
+    pip install -r ../../requirements.txt 2>/dev/null || pip install -r ../requirements.txt 2>/dev/null || pip install fastapi uvicorn pyyaml
+fi
+
+echo ""
+echo "Starting server with uvicorn..."
+echo "📖 API Docs: http://localhost:8000/docs"
+echo "🔍 Health: http://localhost:8000/health"
+echo "Press Ctrl+C to stop"
+echo ""
+
+# Check if --reload flag is passed
+if [ "$1" = "--reload" ]; then
+    echo "🔄 Auto-reload enabled"
+    uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+else
+    uvicorn api:app --host 0.0.0.0 --port 8000
+fi
+'''
+
+        start_server_sh_path = tools_dir / "start_server.sh"
+        with open(start_server_sh_path, 'w') as f:
+            f.write(start_server_sh_content)
+        start_server_sh_path.chmod(0o755)  # Make executable
+        print(f"  ✓ Generated start_server.sh (executable)")
+
+        print(f"✓ Generated tools directory with 1 script")
+        return str(tools_dir)
+
+    def scaffold(self, flow_yaml: str, output_dir: str = None):
+        """
+        Initial scaffolding: create new project from flow definition.
+        FAILS if flow.py already exists (use update() instead).
+
+        Args:
+            flow_yaml: YAML string containing flow definition
+            output_dir: Directory to output files (uses self.output_dir if None)
+
+        Raises:
+            FileExistsError: If flow.py already exists in output directory
+        """
+        if output_dir:
+            self.output_dir = Path(output_dir)
+
+        # Ensure output directory exists
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Check if flow.py already exists
+        flow_py_path = self.output_dir / 'flow.py'
+        if flow_py_path.exists() and not self.force:
+            print(f"❌ Error: Project already exists at {self.output_dir}")
+            print(f"   Found existing file: {flow_py_path}")
+            print(f"\n💡 To update an existing project, use:")
+            print(f"   python -m flowlang.scaffolder update flow.yaml -o {self.output_dir}")
+            print(f"\n⚠️  Or use --force to overwrite (WARNING: destroys all implementations!)")
+            raise FileExistsError(f"Project already exists at {flow_py_path}")
+
+        # Save flow definition
+        flow_path = self.output_dir / 'flow.yaml'
+        with open(flow_path, 'w') as f:
+            f.write(flow_yaml)
+        print(f"💾 Saved flow definition: {flow_path}")
+
+        # Analyze and generate (force=False ensures fresh generation)
+        self.analyze_flow(flow_yaml)
+        self.generate_task_stubs(filename="flow.py")
+
+        # Create tests/ subdirectory for tests
+        tests_dir = self.output_dir / "tests"
+        tests_dir.mkdir(parents=True, exist_ok=True)
+        self.generate_tests(filename="tests/test_tasks.py")
+
+        self.generate_readme()
+        self.generate_api()
+        self.generate_tools()
+        self.generate_env_example()
+        self.generate_gitignore()
+
+        print("\n" + "="*60)
+        print("🎉 Scaffolding complete!")
+        print("="*60)
+        print(f"📁 Output directory: {self.output_dir.absolute()}")
+        print(f"\n📋 Next steps:")
+        print(f"  1. cd {self.output_dir}")
+        print(f"  2. python flow.py              # Check implementation status")
+        print(f"  3. Edit flow.py                # Implement tasks one by one")
+        print(f"  4. pytest tests/test_tasks.py  # Run tests")
+        print(f"  5. ./tools/start_server.sh     # Start the API server")
+        print(f"\n💡 To update after changing flow.yaml:")
+        print(f"  python -m flowlang.scaffolder update flow.yaml -o {self.output_dir}")
+        print("="*60)
+        print()
+
+    def update(self, flow_yaml: str, output_dir: str = None):
+        """
+        Update existing project: smart merge with implemented code.
+        REQUIRES flow.py to exist (use scaffold() for new projects).
+
+        Args:
+            flow_yaml: YAML string containing flow definition
+            output_dir: Directory to output files (uses self.output_dir if None)
+
+        Raises:
+            FileNotFoundError: If flow.py doesn't exist in output directory
+        """
+        if output_dir:
+            self.output_dir = Path(output_dir)
+
+        # Check if flow.py exists
+        flow_py_path = self.output_dir / 'flow.py'
+        if not flow_py_path.exists():
+            print(f"❌ Error: No existing project found at {self.output_dir}")
+            print(f"   Missing file: {flow_py_path}")
+            print(f"\n💡 To create a new project, use:")
+            print(f"   python -m flowlang.scaffolder scaffold flow.yaml -o {self.output_dir}")
+            raise FileNotFoundError(f"No existing project at {flow_py_path}")
+
+        print(f"🔄 Updating existing project at {self.output_dir}")
+        print(f"   Smart merge will preserve your implementations\n")
+
+        # Update flow definition
+        flow_path = self.output_dir / 'flow.yaml'
+        with open(flow_path, 'w') as f:
+            f.write(flow_yaml)
+        print(f"💾 Updated flow definition: {flow_path}")
+
+        # Analyze and update with smart merge
+        self.analyze_flow(flow_yaml)
+        self.generate_task_stubs(filename="flow.py")  # Will use merge logic
+
+        # Create tests/ subdirectory if needed
+        tests_dir = self.output_dir / "tests"
+        tests_dir.mkdir(parents=True, exist_ok=True)
+        self.generate_tests(filename="tests/test_tasks.py")  # Will use merge logic
+
+        self.generate_readme()  # Always regenerated
+        self.generate_api()     # Always regenerated
+        self.generate_tools()   # Always regenerated
+        self.generate_env_example()  # Always regenerated
+        self.generate_gitignore()    # Always regenerated
+
+        print("\n" + "="*60)
+        print("✅ Update complete!")
+        print("="*60)
+
+        # Show merge summary
+        if self.merge_summary['tasks_preserved'] > 0 or self.merge_summary['tests_preserved'] > 0:
+            print(f"\n📊 Smart Merge Summary:")
+            print(f"   Tasks:  {self.merge_summary['tasks_preserved']} preserved, "
+                  f"{self.merge_summary['tasks_added']} added")
+            print(f"   Tests:  {self.merge_summary['tests_preserved']} preserved, "
+                  f"{self.merge_summary['tests_added']} added")
+            if self.merge_summary['tasks_updated'] > 0:
+                print(f"\n⚠️  {self.merge_summary['tasks_updated']} task signatures changed - review manually")
+
+        print(f"\n📋 Next steps:")
+        print(f"  1. Review changes: git diff")
+        print(f"  2. Check status: python flow.py")
+        print(f"  3. Implement new tasks if any were added")
+        print(f"  4. Run tests: pytest tests/test_tasks.py")
+        print(f"  5. Start server: ./tools/start_server.sh")
+        print("="*60)
+        print()
+
+
+# ========================================================================
+# CLI INTERFACE
+# ========================================================================
+
+def handle_auto(flow_file: str, quiet: bool = False) -> int:
+    """
+    Handle 'auto' command: convention-based scaffolding/updating.
+
+    Takes a flow file path like 'flows/login.yaml' and automatically:
+    - Reads the flow name from the YAML file (e.g., 'flow: UserAuth')
+    - Determines output directory as 'flows/UserAuth/' (using flow name, NOT filename)
+    - Scaffolds if project doesn't exist
+    - Updates if project already exists
+
+    Args:
+        flow_file: Path to flow YAML file (e.g., flows/user_auth.yaml with flow: UserAuth)
+        quiet: Suppress verbose output (default: False)
+
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    flow_path = Path(flow_file)
+
+    # Validate flow file exists
+    if not flow_path.exists():
+        print(f"❌ Error: Flow file not found: {flow_file}")
+        return 1
+
+    # Read flow YAML first to get the flow name
+    try:
+        with open(flow_path, 'r') as f:
+            flow_yaml = f.read()
+    except Exception as e:
+        print(f"❌ Error reading flow file: {e}")
+        return 1
+
+    # Extract flow name from YAML (this is the source of truth for directory name)
+    try:
+        flow_def = yaml.safe_load(flow_yaml)
+        flow_name = flow_def.get('flow', None)
+        if not flow_name:
+            print(f"❌ Error: Flow YAML must have a 'flow' field")
+            return 1
+    except Exception as e:
+        print(f"❌ Error parsing flow YAML: {e}")
+        return 1
+
+    # Extract directory from file path
+    # flows/login.yaml -> flows/
+    parent_dir = flow_path.parent
+
+    # Determine output directory using flow name from YAML
+    # flow: TestFlow -> flows/TestFlow/
+    # flow: UserAuth -> flows/UserAuth/
+    output_dir = parent_dir / flow_name
+
+    print(f"🤖 Auto mode: {flow_file} -> {output_dir}/")
+    print(f"   Flow name: {flow_name}")
+    print("="*60)
+
+    # Validate flow before scaffolding
+    print(f"\n🔍 Validating flow definition...")
+    from .validator import validate_flow
+    validation_result = validate_flow(flow_yaml)
+
+    # Show validation summary
+    if validation_result.errors:
+        print(f"   ❌ {len(validation_result.errors)} error(s) found")
+        for err in validation_result.errors:
+            print(f"      [{err.location}] {err.message}")
+
+    if validation_result.warnings:
+        print(f"   ⚠️  {len(validation_result.warnings)} warning(s) found")
+        for warn in validation_result.warnings:
+            print(f"      [{warn.location}] {warn.message}")
+
+    if not validation_result.errors and not validation_result.warnings:
+        print(f"   ✅ No issues found")
+
+    # Determine next action based on validation
+    if not validation_result.valid:
+        print(f"\n❌ Flow validation failed. Please fix errors before generating.")
+        print(f"\n💡 Run: python -m flowlang validate {flow_file}")
+        return 1
+
+    if validation_result.warnings:
+        print(f"\n⚠️  Warnings detected but continuing with generation...")
+
+    print()
+
+    # Check if project already exists
+    flow_py_path = output_dir / 'flow.py'
+
+    try:
+        scaffolder = FlowScaffolder(output_dir=str(output_dir), force=False)
+
+        if flow_py_path.exists():
+            # Project exists - update
+            print(f"📦 Existing project detected at {output_dir}")
+            print(f"🔄 Running UPDATE to preserve implementations...\n")
+            scaffolder.update(flow_yaml, str(output_dir))
+        else:
+            # New project - scaffold
+            print(f"🆕 New project detected")
+            print(f"🏗️  Running SCAFFOLD to create initial structure...\n")
+            scaffolder.scaffold(flow_yaml, str(output_dir))
+
+        return 0
+    except Exception as e:
+        print(f"❌ Error during auto operation: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def handle_auto_all(directory: str, pattern: str = '*.yaml') -> int:
+    """
+    Handle 'auto-all' command: batch process all flows in a directory.
+
+    Scans directory for YAML files matching pattern and runs 'auto' on each.
+
+    Args:
+        directory: Directory to scan (e.g., flows/)
+        pattern: Glob pattern to match files (default: *.yaml)
+
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    dir_path = Path(directory)
+
+    if not dir_path.exists():
+        print(f"❌ Error: Directory not found: {directory}")
+        return 1
+
+    if not dir_path.is_dir():
+        print(f"❌ Error: Not a directory: {directory}")
+        return 1
+
+    # Find all matching flow files
+    # Only look at files directly in the directory, not subdirectories
+    flow_files = [f for f in dir_path.glob(pattern) if f.is_file()]
+
+    if not flow_files:
+        print(f"⚠️  No flow files found matching pattern '{pattern}' in {directory}")
+        print(f"   Looking for: {dir_path / pattern}")
+        return 1
+
+    print(f"🔍 Found {len(flow_files)} flow file(s) in {directory}")
+    print("="*60)
+
+    success_count = 0
+    error_count = 0
+
+    for flow_file in sorted(flow_files):
+        print(f"\n{'='*60}")
+        print(f"Processing: {flow_file.name}")
+        print(f"{'='*60}")
+
+        result = handle_auto(str(flow_file))
+
+        if result == 0:
+            success_count += 1
+            print(f"✅ Successfully processed {flow_file.name}")
+        else:
+            error_count += 1
+            print(f"❌ Failed to process {flow_file.name}")
+
+    # Summary
+    print(f"\n{'='*60}")
+    print(f"📊 Batch Processing Summary")
+    print(f"{'='*60}")
+    print(f"Total files: {len(flow_files)}")
+    print(f"✅ Success: {success_count}")
+    print(f"❌ Errors: {error_count}")
+    print(f"{'='*60}")
+
+    return 0 if error_count == 0 else 1
+
+
+def main():
+    """CLI for scaffolding and updating flows"""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='FlowLang Scaffolder - Generate and update task stubs from flow definitions',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Convention-based: auto-scaffold/update from YAML location (RECOMMENDED)
+  python -m flowlang.scaffolder auto flows/login.yaml
+  # Creates or updates flows/login/ based on flows/login.yaml
+
+  # Batch process all flows in a directory
+  python -m flowlang.scaffolder auto-all flows/
+  # Processes all *.yaml files in flows/
+
+  # Create a new project (explicit scaffold)
+  python -m flowlang.scaffolder scaffold my_flow.yaml -o ./my_project
+
+  # Update an existing project (explicit update with smart merge)
+  python -m flowlang.scaffolder update my_flow.yaml -o ./my_project
+
+For more information, see: https://github.com/hello-adam-martin/FlowLang
+        """
+    )
+
+    subparsers = parser.add_subparsers(dest='command', help='Command to execute')
+
+    # Scaffold command (create new project)
+    scaffold_parser = subparsers.add_parser(
+        'scaffold',
+        help='Create a new project from flow definition (fails if project exists)'
+    )
+    scaffold_parser.add_argument(
+        'flow_file',
+        help='Path to flow YAML file'
+    )
+    scaffold_parser.add_argument(
+        '-o', '--output',
+        default='./flow_project',
+        help='Output directory (default: ./flow_project)'
+    )
+    scaffold_parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Force overwrite existing project (WARNING: destroys implementations!)'
+    )
+
+    # Update command (smart merge)
+    update_parser = subparsers.add_parser(
+        'update',
+        help='Update existing project with smart merge (requires project to exist)'
+    )
+    update_parser.add_argument(
+        'flow_file',
+        help='Path to flow YAML file'
+    )
+    update_parser.add_argument(
+        '-o', '--output',
+        default='.',
+        help='Output directory (default: current directory)'
+    )
+
+    # Auto command (convention-based scaffolding/updating)
+    auto_parser = subparsers.add_parser(
+        'auto',
+        help='Automatically scaffold or update based on convention (flows/name.yaml -> flows/name/)'
+    )
+    auto_parser.add_argument(
+        'flow_file',
+        help='Path to flow YAML file (e.g., flows/login.yaml)'
+    )
+
+    # Auto-all command (batch processing)
+    auto_all_parser = subparsers.add_parser(
+        'auto-all',
+        help='Automatically scaffold or update all flows in a directory'
+    )
+    auto_all_parser.add_argument(
+        'directory',
+        help='Directory containing flow YAML files (e.g., flows/)'
+    )
+    auto_all_parser.add_argument(
+        '--pattern',
+        default='*.yaml',
+        help='Pattern to match flow files (default: *.yaml)'
+    )
+
+    args = parser.parse_args()
+
+    # Check if subcommand was provided
+    if args.command is None:
+        parser.print_help()
+        print("\n❌ Error: Please specify a command (scaffold, update, auto, or auto-all)")
+        return 1
+
+    # Extract arguments from subcommand
+    command = args.command
+
+    # Handle auto-all separately (batch processing)
+    if command == 'auto-all':
+        return handle_auto_all(args.directory, args.pattern)
+
+    # For other commands, extract flow_file
+    flow_file = args.flow_file if hasattr(args, 'flow_file') else None
+    output_dir = getattr(args, 'output', None)
+    force = getattr(args, 'force', False)
+
+    # Read flow file
+    try:
+        with open(flow_file, 'r') as f:
+            flow_yaml = f.read()
+    except FileNotFoundError:
+        print(f"❌ Error: Flow file not found: {flow_file}")
+        return 1
+    except Exception as e:
+        print(f"❌ Error reading flow file: {e}")
+        return 1
+
+    # Execute command
+    try:
+        if command == 'auto':
+            # Convention-based: flows/name.yaml -> flows/name/
+            return handle_auto(flow_file)
+        elif command == 'scaffold':
+            scaffolder = FlowScaffolder(output_dir=output_dir, force=force)
+            scaffolder.scaffold(flow_yaml, output_dir)
+        elif command == 'update':
+            scaffolder = FlowScaffolder(output_dir=output_dir, force=force)
+            scaffolder.update(flow_yaml, output_dir)
+        else:
+            print(f"❌ Unknown command: {command}")
+            return 1
+
+        return 0
+    except (FileExistsError, FileNotFoundError) as e:
+        # These are expected errors with helpful messages already printed
+        return 1
+    except Exception as e:
+        print(f"❌ Error during {command}: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+if __name__ == '__main__':
+    exit(main())

@@ -1,0 +1,211 @@
+flow: OrderCheckout
+description: |
+  Complete order checkout workflow demonstrating subflow composition.
+
+  This flow orchestrates three reusable subflows:
+  1. ValidateUser - Verify user identity and permissions
+  2. ProcessPayment - Handle payment processing
+  3. SendNotification - Send confirmation notifications
+
+  Each subflow is independent and reusable across different flows.
+
+inputs:
+  - name: user_id
+    type: string
+    required: true
+    description: User placing the order
+
+  - name: order_id
+    type: string
+    required: true
+    description: Order ID to process
+
+  - name: amount
+    type: number
+    required: true
+    description: Order total amount
+
+  - name: currency
+    type: string
+    required: true
+    description: Currency code
+
+  - name: payment_method
+    type: string
+    required: true
+    description: Payment method ID
+
+steps:
+  # Step 1: Validate user has permission to checkout
+  - subflow: validate_user
+    id: validation
+    inputs:
+      user_id: ${inputs.user_id}
+      required_role: "customer"
+    outputs:
+      - is_valid
+      - user_data
+      - user_role
+      - status
+
+  # Step 2: Check validation result
+  - if: ${validation.is_valid} == false
+    then:
+      # Send failure notification
+      - subflow: send_notification
+        id: notify_failure
+        inputs:
+          user_id: ${inputs.user_id}
+          message: "Order checkout failed: Invalid user or permissions"
+          notification_type: "email"
+          priority: "high"
+
+      # Exit flow with error
+      - exit:
+          reason: "User validation failed"
+          outputs:
+            success: false
+            error: "User validation failed"
+            user_status: ${validation.status}
+
+  # Step 3: Get order details
+  - task: GetOrderDetails
+    id: order
+    inputs:
+      order_id: ${inputs.order_id}
+    outputs:
+      - order_data
+      - items
+      - shipping_address
+
+  # Step 4: Calculate final amount (with tax, shipping, etc.)
+  - task: CalculateFinalAmount
+    id: calculate
+    inputs:
+      base_amount: ${inputs.amount}
+      shipping_address: ${order.shipping_address}
+      items: ${order.items}
+    outputs:
+      - final_amount
+      - tax_amount
+      - shipping_cost
+
+  # Step 5: Process payment using subflow
+  - subflow: process_payment
+    id: payment
+    inputs:
+      amount: ${calculate.final_amount}
+      currency: ${inputs.currency}
+      payment_method: ${inputs.payment_method}
+      user_id: ${inputs.user_id}
+    outputs:
+      - success
+      - transaction_id
+      - amount_charged
+      - payment_method_type
+      - record_id
+    on_error:
+      # Handle payment failure
+      - task: LogError
+        id: log_payment_error
+        inputs:
+          error_type: "payment_failed"
+          user_id: ${inputs.user_id}
+          order_id: ${inputs.order_id}
+          amount: ${calculate.final_amount}
+
+      - subflow: send_notification
+        id: notify_payment_failed
+        inputs:
+          user_id: ${inputs.user_id}
+          message: "Payment failed for order ${inputs.order_id}. Please try again."
+          notification_type: "email"
+          priority: "high"
+
+      - exit:
+          reason: "Payment processing failed"
+          outputs:
+            success: false
+            error: "Payment could not be processed"
+
+  # Step 6: Update order status
+  - task: UpdateOrderStatus
+    id: update_order
+    inputs:
+      order_id: ${inputs.order_id}
+      status: "paid"
+      transaction_id: ${payment.transaction_id}
+      amount_paid: ${payment.amount_charged}
+    outputs:
+      - updated
+      - order_status
+
+  # Step 7: Create shipment
+  - task: CreateShipment
+    id: shipment
+    inputs:
+      order_id: ${inputs.order_id}
+      shipping_address: ${order.shipping_address}
+      items: ${order.items}
+    outputs:
+      - shipment_id
+      - estimated_delivery
+
+  # Step 8: Send success notification
+  - subflow: send_notification
+    id: notify_success
+    inputs:
+      user_id: ${inputs.user_id}
+      message: "Order ${inputs.order_id} confirmed! Transaction: ${payment.transaction_id}. Estimated delivery: ${shipment.estimated_delivery}"
+      notification_type: "all"
+      priority: "normal"
+    outputs:
+      - success
+      - log_id
+
+  # Step 9: Generate receipt
+  - task: GenerateReceipt
+    id: receipt
+    inputs:
+      order_id: ${inputs.order_id}
+      transaction_id: ${payment.transaction_id}
+      amount: ${payment.amount_charged}
+      currency: ${inputs.currency}
+      items: ${order.items}
+      tax: ${calculate.tax_amount}
+      shipping: ${calculate.shipping_cost}
+      user_data: ${validation.user_data}
+    outputs:
+      - receipt_id
+      - receipt_url
+
+outputs:
+  - name: success
+    value: true
+
+  - name: order_id
+    value: ${inputs.order_id}
+
+  - name: transaction_id
+    value: ${payment.transaction_id}
+
+  - name: amount_charged
+    value: ${payment.amount_charged}
+
+  - name: currency
+    value: ${inputs.currency}
+
+  - name: shipment_id
+    value: ${shipment.shipment_id}
+
+  - name: estimated_delivery
+    value: ${shipment.estimated_delivery}
+
+  - name: receipt_url
+    value: ${receipt.receipt_url}
+
+  - name: notification_sent
+    value: ${notify_success.success}
+
+  - name: order_status
+    value: ${update_order.order_status}

@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ReactFlow custom styles */
+.react-flow__node {
+  font-size: 12px;
+}
+
+.react-flow__node.selected {
+  /* Remove default selection styling - nodes handle their own selection appearance */
+  box-shadow: none !important;
+}
+
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #3b82f6;
+}
+
+/* Invalid connection target styling */
+.react-flow__node.invalid-connection-target > div {
+  border-color: #ef4444 !important;
+  border-width: 3px !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2) !important;
+}
+
+/* Edge styling */
+.react-flow__edge {
+  cursor: pointer;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+  transition: stroke-width 0.2s, stroke 0.2s;
+}
+
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke-width: 3;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #3b82f6 !important;
+  stroke-width: 3;
+}
+
+/* Change arrowhead color when edge is selected */
+.react-flow__edge.selected marker path {
+  fill: #3b82f6 !important;
+}
+
+/* Custom edge delete button */
+.edge-delete-button {
+  width: 18px;
+  height: 18px;
+  background: #ef4444;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  opacity: 0.9;
+  transition: all 0.2s;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.edge-delete-button:hover {
+  background: #dc2626;
+  opacity: 1;
+  transform: scale(1.1);
+}

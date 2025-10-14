@@ -398,7 +398,10 @@ class FlowServer:
                     },
                     "execution": {
                         "execute": f"/flows/{self.flow_name}/execute",
-                        "stream": f"/flows/{self.flow_name}/execute/stream"
+                        "stream": f"/flows/{self.flow_name}/execute/stream",
+                        "list_executions": f"/flows/{self.flow_name}/executions",
+                        "execution_status": f"/flows/{self.flow_name}/executions/{{execution_id}}",
+                        "cancel": f"/flows/{self.flow_name}/executions/{{execution_id}}/cancel"
                     }
                 }
             }
@@ -863,6 +866,103 @@ class FlowServer:
 
             return trigger.get_status()
 
+        # Execution management endpoints
+        @self.app.post(
+            "/flows/{flow_name}/executions/{execution_id}/cancel",
+            tags=["Execution"],
+            responses={
+                200: {"description": "Execution cancelled successfully"},
+                404: {"description": "Execution not found"},
+            }
+        )
+        async def cancel_execution(flow_name: str, execution_id: str):
+            """
+            Cancel a running flow execution.
+
+            Returns success if the execution was cancelled, or error if not found or already completed.
+            """
+            if flow_name != self.flow_name:
+                raise HTTPException(status_code=404, detail=f"Flow not found: {flow_name}")
+
+            # Find the execution
+            if execution_id not in self.executions:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Execution not found: {execution_id}"
+                )
+
+            handle = self.executions[execution_id]
+
+            # Check if already completed
+            if handle.status != "running":
+                return {
+                    "success": False,
+                    "message": f"Execution already {handle.status}",
+                    "execution_id": execution_id,
+                    "status": handle.status
+                }
+
+            # Cancel the execution
+            await handle.cancel("Cancelled by user request")
+
+            return {
+                "success": True,
+                "message": "Execution cancellation requested",
+                "execution_id": execution_id,
+                "flow": flow_name
+            }
+
+        @self.app.get(
+            "/flows/{flow_name}/executions",
+            tags=["Execution"],
+            responses={
+                200: {"description": "List of executions"},
+                404: {"description": "Flow not found"},
+            }
+        )
+        async def list_executions(flow_name: str):
+            """
+            List all executions for a flow (running and completed).
+
+            Shows status, start time, and other execution metadata.
+            """
+            if flow_name != self.flow_name:
+                raise HTTPException(status_code=404, detail=f"Flow not found: {flow_name}")
+
+            executions_list = [handle.to_dict() for handle in self.executions.values()]
+
+            return {
+                "flow": flow_name,
+                "executions": executions_list,
+                "count": len(executions_list)
+            }
+
+        @self.app.get(
+            "/flows/{flow_name}/executions/{execution_id}",
+            tags=["Execution"],
+            responses={
+                200: {"description": "Execution details"},
+                404: {"description": "Execution not found"},
+            }
+        )
+        async def get_execution_status(flow_name: str, execution_id: str):
+            """
+            Get status and details of a specific execution.
+
+            Returns execution metadata including status, timing, and results.
+            """
+            if flow_name != self.flow_name:
+                raise HTTPException(status_code=404, detail=f"Flow not found: {flow_name}")
+
+            if execution_id not in self.executions:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Execution not found: {execution_id}"
+                )
+
+            handle = self.executions[execution_id]
+            return handle.to_dict()
+
         # Exception handlers
         @self.app.exception_handler(HTTPException)
         async def http_exception_handler(request: Request, exc: HTTPException):
@@ -975,6 +1075,9 @@ class MultiFlowServer:
         self.flows_dir = Path(flows_dir).absolute()
         self.flows = {}  # {flow_name: {'executor': ..., 'registry': ..., 'flow_def': ..., 'flow_yaml': ..., 'reload_manager': ..., 'file_watcher': ...}}
         self.enable_hot_reload = enable_hot_reload
+
+        # Track running executions for cancellation (global across all flows)
+        self.executions: Dict[str, ExecutionHandle] = {}
 
         # Discover and load all flows
         self._discover_flows()
@@ -1333,7 +1436,10 @@ class MultiFlowServer:
                     },
                     "execution": {
                         "execute": "/flows/{flow_name}/execute",
-                        "stream": "/flows/{flow_name}/execute/stream"
+                        "stream": "/flows/{flow_name}/execute/stream",
+                        "list_executions": "/flows/{flow_name}/executions",
+                        "execution_status": "/flows/{flow_name}/executions/{execution_id}",
+                        "cancel": "/flows/{flow_name}/executions/{execution_id}/cancel"
                     }
                 }
             }
@@ -1483,24 +1589,43 @@ class MultiFlowServer:
 
             start_time = time.time()
 
+            # Create cancellation token and execution handle
+            execution_id = str(uuid.uuid4())
+            cancellation_token = CancellationToken()
+            handle = ExecutionHandle(execution_id, flow_name, cancellation_token)
+            self.executions[execution_id] = handle
+
             try:
-                # Execute the flow
+                # Execute the flow with cancellation token
                 result = await executor.execute_flow(
                     flow_yaml,
-                    inputs=request.inputs
+                    inputs=request.inputs,
+                    cancellation_token=cancellation_token
                 )
 
                 execution_time = (time.time() - start_time) * 1000
 
+                # Mark execution as completed or failed
                 if result['success']:
+                    handle.mark_completed(result)
                     return FlowExecuteResponse(
                         success=True,
                         outputs=result.get('outputs', {}),
                         execution_time_ms=execution_time,
                         flow=flow_name
                     )
+                elif result.get('cancelled'):
+                    handle.mark_cancelled()
+                    return FlowExecuteResponse(
+                        success=False,
+                        error=result.get('reason', 'Execution cancelled'),
+                        execution_time_ms=execution_time,
+                        flow=flow_name
+                    )
                 else:
+                    # Flow completed but with errors
                     error_msg = result.get('error', 'Unknown error')
+                    handle.mark_failed(str(error_msg))
                     return FlowExecuteResponse(
                         success=False,
                         error=str(error_msg),
@@ -1851,6 +1976,120 @@ class MultiFlowServer:
                 )
 
             return trigger.get_status()
+
+        # Execution management endpoints
+        @self.app.post(
+            "/flows/{flow_name}/executions/{execution_id}/cancel",
+            tags=["Execution"],
+            responses={
+                200: {"description": "Execution cancelled successfully"},
+                404: {"description": "Execution not found"},
+            }
+        )
+        async def cancel_execution(flow_name: str, execution_id: str):
+            """
+            Cancel a running flow execution.
+
+            Returns success if the execution was cancelled, or error if not found or already completed.
+            """
+            if flow_name not in self.flows:
+                available = ', '.join(self.flows.keys())
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Flow not found: {flow_name}. Available flows: {available}"
+                )
+
+            # Find the execution
+            if execution_id not in self.executions:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Execution not found: {execution_id}"
+                )
+
+            handle = self.executions[execution_id]
+
+            # Check if already completed
+            if handle.status != "running":
+                return {
+                    "success": False,
+                    "message": f"Execution already {handle.status}",
+                    "execution_id": execution_id,
+                    "status": handle.status
+                }
+
+            # Cancel the execution
+            await handle.cancel("Cancelled by user request")
+
+            return {
+                "success": True,
+                "message": "Execution cancellation requested",
+                "execution_id": execution_id,
+                "flow": flow_name
+            }
+
+        @self.app.get(
+            "/flows/{flow_name}/executions",
+            tags=["Execution"],
+            responses={
+                200: {"description": "List of executions"},
+                404: {"description": "Flow not found"},
+            }
+        )
+        async def list_executions(flow_name: str):
+            """
+            List all executions for a flow (running and completed).
+
+            Shows status, start time, and other execution metadata.
+            """
+            if flow_name not in self.flows:
+                available = ', '.join(self.flows.keys())
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Flow not found: {flow_name}. Available flows: {available}"
+                )
+
+            # Filter executions for this specific flow
+            executions_list = [
+                handle.to_dict()
+                for handle in self.executions.values()
+                if handle.flow_name == flow_name
+            ]
+
+            return {
+                "flow": flow_name,
+                "executions": executions_list,
+                "count": len(executions_list)
+            }
+
+        @self.app.get(
+            "/flows/{flow_name}/executions/{execution_id}",
+            tags=["Execution"],
+            responses={
+                200: {"description": "Execution details"},
+                404: {"description": "Execution not found"},
+            }
+        )
+        async def get_execution_status(flow_name: str, execution_id: str):
+            """
+            Get status and details of a specific execution.
+
+            Returns execution metadata including status, timing, and results.
+            """
+            if flow_name not in self.flows:
+                available = ', '.join(self.flows.keys())
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Flow not found: {flow_name}. Available flows: {available}"
+                )
+
+            if execution_id not in self.executions:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Execution not found: {execution_id}"
+                )
+
+            handle = self.executions[execution_id]
+            return handle.to_dict()
 
         # Project endpoints
         @self.app.get("/projects", tags=["Projects"])

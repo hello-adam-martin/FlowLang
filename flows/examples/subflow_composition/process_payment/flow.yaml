@@ -1,0 +1,105 @@
+flow: ProcessPayment
+description: Process a payment transaction with validation and settlement
+
+inputs:
+  - name: amount
+    type: number
+    required: true
+    description: Payment amount
+
+  - name: currency
+    type: string
+    required: true
+    description: Currency code (USD, EUR, etc.)
+
+  - name: payment_method
+    type: string
+    required: true
+    description: Payment method ID
+
+  - name: user_id
+    type: string
+    required: true
+    description: User making the payment
+
+steps:
+  - task: ValidateAmount
+    id: validate_amount
+    inputs:
+      amount: ${inputs.amount}
+      currency: ${inputs.currency}
+    outputs:
+      - is_valid
+      - min_amount
+      - max_amount
+
+  - if: ${validate_amount.is_valid} == false
+    then:
+      - exit:
+          reason: "Invalid payment amount"
+          outputs:
+            success: false
+            error: "Amount must be between ${validate_amount.min_amount} and ${validate_amount.max_amount}"
+
+  - task: ValidatePaymentMethod
+    id: validate_method
+    inputs:
+      payment_method: ${inputs.payment_method}
+      user_id: ${inputs.user_id}
+    outputs:
+      - is_valid
+      - method_type
+      - last_four
+
+  - if: ${validate_method.is_valid} == false
+    then:
+      - exit:
+          reason: "Invalid payment method"
+          outputs:
+            success: false
+            error: "Payment method not found or expired"
+
+  - task: ChargePaymentMethod
+    id: charge
+    inputs:
+      amount: ${inputs.amount}
+      currency: ${inputs.currency}
+      payment_method: ${inputs.payment_method}
+    outputs:
+      - transaction_id
+      - status
+      - charged_amount
+    retry:
+      max_attempts: 3
+      delay: 2
+      backoff: 2
+
+  - task: RecordTransaction
+    id: record
+    inputs:
+      transaction_id: ${charge.transaction_id}
+      user_id: ${inputs.user_id}
+      amount: ${charge.charged_amount}
+      currency: ${inputs.currency}
+      status: ${charge.status}
+    outputs:
+      - record_id
+
+outputs:
+  - name: success
+    value: true
+
+  - name: transaction_id
+    value: ${charge.transaction_id}
+
+  - name: amount_charged
+    value: ${charge.charged_amount}
+
+  - name: currency
+    value: ${inputs.currency}
+
+  - name: payment_method_type
+    value: ${validate_method.method_type}
+
+  - name: record_id
+    value: ${record.record_id}

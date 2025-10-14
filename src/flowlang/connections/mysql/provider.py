@@ -192,6 +192,8 @@ class MySQLPlugin(ConnectionPlugin):
             'mysql_query': self._task_query,
             'mysql_execute': self._task_execute,
             'mysql_transaction': self._task_transaction,
+            'mysql_batch_insert': self._task_batch_insert,
+            'mysql_batch_update': self._task_batch_update,
         }
 
     async def _task_query(
@@ -330,6 +332,164 @@ class MySQLPlugin(ConnectionPlugin):
             await connection.rollback()
             raise FlowExecutionError(
                 f"MySQL transaction failed: {e}"
+            ) from e
+
+    async def _task_batch_insert(
+        self,
+        table: str,
+        records: List[Dict[str, Any]],
+        batch_size: int = 1000,
+        connection=None
+    ) -> Dict[str, Any]:
+        """
+        Built-in task: Batch insert multiple records efficiently.
+
+        Uses executemany for efficient bulk inserts.
+
+        Args:
+            table: Table name
+            records: List of dicts with column-value pairs
+            batch_size: Number of records to insert per batch
+            connection: Database connection (injected)
+
+        Returns:
+            Dict with 'inserted_count' and 'batches' keys
+
+        Example YAML:
+            - mysql_batch_insert:
+                id: import_users
+                connection: db
+                table: users
+                records: ${previous_step.user_list}
+                batch_size: 500
+                outputs:
+                  - inserted_count
+        """
+        if not records:
+            return {'inserted_count': 0, 'batches': 0}
+
+        try:
+            # Get column names from first record
+            columns = list(records[0].keys())
+
+            # Build INSERT query with %s placeholders for MySQL
+            placeholders = ', '.join('%s' for _ in columns)
+            query = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
+
+            inserted_count = 0
+            batch_count = 0
+
+            # Process in batches
+            async with connection.cursor() as cursor:
+                for i in range(0, len(records), batch_size):
+                    batch = records[i:i + batch_size]
+
+                    # Prepare batch values
+                    batch_values = [
+                        tuple(record[col] for col in columns)
+                        for record in batch
+                    ]
+
+                    # Execute batch
+                    await cursor.executemany(query, batch_values)
+
+                    inserted_count += len(batch)
+                    batch_count += 1
+
+                await connection.commit()
+
+            return {
+                'inserted_count': inserted_count,
+                'batches': batch_count,
+                'table': table
+            }
+
+        except Exception as e:
+            await connection.rollback()
+            raise FlowExecutionError(
+                f"MySQL batch insert failed: {e}"
+            ) from e
+
+    async def _task_batch_update(
+        self,
+        table: str,
+        updates: List[Dict[str, Any]],
+        key_field: str = 'id',
+        batch_size: int = 1000,
+        connection=None
+    ) -> Dict[str, Any]:
+        """
+        Built-in task: Batch update multiple records efficiently.
+
+        Args:
+            table: Table name
+            updates: List of dicts with column-value pairs (must include key_field)
+            key_field: Field to use for WHERE clause (default: 'id')
+            batch_size: Number of records to update per batch
+            connection: Database connection (injected)
+
+        Returns:
+            Dict with 'updated_count' and 'batches' keys
+
+        Example YAML:
+            - mysql_batch_update:
+                id: update_prices
+                connection: db
+                table: products
+                key_field: product_id
+                updates: ${previous_step.price_changes}
+                batch_size: 500
+                outputs:
+                  - updated_count
+        """
+        if not updates:
+            return {'updated_count': 0, 'batches': 0}
+
+        try:
+            # Verify key_field exists in all records
+            if not all(key_field in record for record in updates):
+                raise ValueError(f"All update records must contain '{key_field}' field")
+
+            # Get column names from first record (excluding key field)
+            columns = [col for col in updates[0].keys() if col != key_field]
+
+            # Build UPDATE query with %s placeholders for MySQL
+            set_clause = ', '.join(f'{col} = %s' for col in columns)
+            query = f"UPDATE {table} SET {set_clause} WHERE {key_field} = %s"
+
+            updated_count = 0
+            batch_count = 0
+
+            # Process in batches
+            async with connection.cursor() as cursor:
+                for i in range(0, len(updates), batch_size):
+                    batch = updates[i:i + batch_size]
+
+                    # Prepare batch values: (col1_value, col2_value, ..., key_value)
+                    batch_values = [
+                        tuple([record[col] for col in columns] + [record[key_field]])
+                        for record in batch
+                    ]
+
+                    # Execute batch
+                    await cursor.executemany(query, batch_values)
+
+                    # Count affected rows
+                    updated_count += len(batch)
+                    batch_count += 1
+
+                await connection.commit()
+
+            return {
+                'updated_count': updated_count,
+                'batches': batch_count,
+                'table': table
+            }
+
+        except Exception as e:
+            await connection.rollback()
+            raise FlowExecutionError(
+                f"MySQL batch update failed: {e}"
             ) from e
 
     def get_dependencies(self) -> List[str]:

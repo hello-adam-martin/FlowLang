@@ -1,0 +1,285 @@
+flow: DatabaseBatchImport
+description: |
+  Demonstrates efficient batch database operations with validation and error handling.
+  Shows 10-30x performance improvement over individual inserts.
+
+connections:
+  # SQLite for this example (no external DB required)
+  # Replace with postgres or mysql for production
+  db:
+    type: sqlite
+    database: ./data/example.db
+    timeout: 10.0
+
+inputs:
+  - name: source
+    type: string
+    required: true
+    description: "Data source: 'sample' (generate test data) or 'csv' (load from file)"
+
+  - name: csv_path
+    type: string
+    required: false
+    description: "Path to CSV file (required if source='csv')"
+
+  - name: record_count
+    type: integer
+    required: false
+    description: "Number of test records to generate (if source='sample')"
+    default: 1000
+
+  - name: batch_size
+    type: integer
+    required: false
+    description: "Batch size for insert operations"
+    default: 500
+
+steps:
+  # Step 1: Create database tables if needed
+  - sqlite_execute:
+      id: create_users_table
+      connection: db
+      query: |
+        CREATE TABLE IF NOT EXISTS users (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          email TEXT NOT NULL UNIQUE,
+          age INTEGER,
+          role TEXT,
+          status TEXT DEFAULT 'active',
+          created_at TEXT DEFAULT (datetime('now'))
+        )
+      outputs:
+        - rows_affected
+
+  - sqlite_execute:
+      id: create_products_table
+      connection: db
+      query: |
+        CREATE TABLE IF NOT EXISTS products (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          product_id TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
+          price REAL NOT NULL,
+          category TEXT,
+          stock INTEGER DEFAULT 0,
+          updated_at TEXT DEFAULT (datetime('now'))
+        )
+      outputs:
+        - rows_affected
+
+  # Step 2: Load or generate data based on source
+  - switch: ${inputs.source}
+    cases:
+      - when: "sample"
+        do:
+          - task: GenerateSampleData
+            id: load_data
+            inputs:
+              count: ${inputs.record_count}
+            outputs:
+              - user_records
+              - product_records
+              - record_count
+
+      - when: "csv"
+        do:
+          - task: LoadCSV
+            id: load_data
+            inputs:
+              file_path: ${inputs.csv_path}
+            outputs:
+              - user_records
+              - product_records
+              - record_count
+
+    default:
+      - task: LogError
+        inputs:
+          message: "Invalid source: ${inputs.source}. Must be 'sample' or 'csv'"
+      - exit:
+          reason: "Invalid data source"
+
+  # Step 3: Validate records before batch insert
+  - task: ValidateRecords
+    id: validate_users
+    inputs:
+      records: ${load_data.user_records}
+      required_fields: ["name", "email"]
+      schema:
+        name:
+          type: string
+          min_length: 1
+          max_length: 100
+        email:
+          type: string
+          pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+        age:
+          type: integer
+          min: 0
+          max: 150
+        role:
+          type: string
+          enum: ["admin", "user", "guest"]
+    outputs:
+      - valid_records
+      - invalid_records
+      - validation_errors
+
+  # Step 4: Batch insert users (10-30x faster than individual inserts)
+  - sqlite_batch_insert:
+      id: import_users
+      connection: db
+      table: users
+      records: ${validate_users.valid_records}
+      batch_size: ${inputs.batch_size}
+      outputs:
+        - inserted_count
+        - batches
+      retry:
+        max_attempts: 3
+        delay: 1
+        backoff: 2
+      on_error:
+        - task: LogError
+          inputs:
+            message: "Batch insert failed: ${context.last_error}"
+            details:
+              attempted_count: ${validate_users.valid_records|length}
+              batch_size: ${inputs.batch_size}
+
+  # Step 5: Query inserted users to verify
+  - sqlite_query:
+      id: verify_users
+      connection: db
+      query: "SELECT COUNT(*) as count, AVG(age) as avg_age FROM users WHERE status = ?"
+      params: ["active"]
+      outputs:
+        - rows
+
+  # Step 6: Validate product records
+  - task: ValidateRecords
+    id: validate_products
+    inputs:
+      records: ${load_data.product_records}
+      required_fields: ["product_id", "name", "price"]
+      schema:
+        product_id:
+          type: string
+          pattern: "^P[0-9]{3,}$"
+        name:
+          type: string
+          min_length: 1
+        price:
+          type: number
+          min: 0
+        category:
+          type: string
+        stock:
+          type: integer
+          min: 0
+    outputs:
+      - valid_records
+      - invalid_records
+
+  # Step 7: Batch insert products
+  - sqlite_batch_insert:
+      id: import_products
+      connection: db
+      table: products
+      records: ${validate_products.valid_records}
+      batch_size: ${inputs.batch_size}
+      outputs:
+        - inserted_count
+        - batches
+
+  # Step 8: Simulate price updates with batch update
+  - task: GeneratePriceUpdates
+    id: price_updates
+    inputs:
+      base_records: ${validate_products.valid_records}
+      increase_percent: 10
+    outputs:
+      - updates
+
+  # Step 9: Apply batch updates (also 10-30x faster)
+  - sqlite_batch_update:
+      id: apply_price_updates
+      connection: db
+      table: products
+      key_field: product_id
+      updates: ${price_updates.updates}
+      batch_size: ${inputs.batch_size}
+      outputs:
+        - updated_count
+        - batches
+
+  # Step 10: Generate performance metrics
+  - task: CalculateMetrics
+    id: metrics
+    inputs:
+      users_inserted: ${import_users.inserted_count}
+      users_batches: ${import_users.batches}
+      products_inserted: ${import_products.inserted_count}
+      products_batches: ${import_products.batches}
+      updates_applied: ${apply_price_updates.updated_count}
+      updates_batches: ${apply_price_updates.batches}
+      batch_size: ${inputs.batch_size}
+      invalid_users: ${validate_users.invalid_records|length}
+      invalid_products: ${validate_products.invalid_records|length}
+    outputs:
+      - summary
+      - performance_report
+
+  # Step 11: Log invalid records if any
+  - if: ${validate_users.invalid_records|length} > 0
+    then:
+      - task: WriteJSON
+        id: log_invalid_users
+        inputs:
+          file_path: ./logs/invalid_users.json
+          data:
+            count: ${validate_users.invalid_records|length}
+            errors: ${validate_users.validation_errors}
+            records: ${validate_users.invalid_records}
+
+  - if: ${validate_products.invalid_records|length} > 0
+    then:
+      - task: WriteJSON
+        id: log_invalid_products
+        inputs:
+          file_path: ./logs/invalid_products.json
+          data:
+            count: ${validate_products.invalid_records|length}
+            records: ${validate_products.invalid_records}
+
+outputs:
+  - name: success
+    value: true
+
+  - name: users_imported
+    value: ${import_users.inserted_count}
+
+  - name: users_batches
+    value: ${import_users.batches}
+
+  - name: products_imported
+    value: ${import_products.inserted_count}
+
+  - name: products_batches
+    value: ${import_products.batches}
+
+  - name: prices_updated
+    value: ${apply_price_updates.updated_count}
+
+  - name: invalid_count
+    value: ${validate_users.invalid_records|length} + ${validate_products.invalid_records|length}
+
+  - name: database_stats
+    value: ${verify_users.rows[0]}
+
+  - name: performance_report
+    value: ${metrics.performance_report}
+
+  - name: summary
+    value: ${metrics.summary}

@@ -164,6 +164,8 @@ class PostgresPlugin(ConnectionPlugin):
             'pg_query': self._task_query,
             'pg_execute': self._task_execute,
             'pg_transaction': self._task_transaction,
+            'pg_batch_insert': self._task_batch_insert,
+            'pg_batch_update': self._task_batch_update,
         }
 
     async def _task_query(
@@ -297,6 +299,159 @@ class PostgresPlugin(ConnectionPlugin):
         except Exception as e:
             raise FlowExecutionError(
                 f"PostgreSQL transaction failed: {e}"
+            ) from e
+
+    async def _task_batch_insert(
+        self,
+        table: str,
+        records: List[Dict[str, Any]],
+        batch_size: int = 1000,
+        connection=None
+    ) -> Dict[str, Any]:
+        """
+        Built-in task: Batch insert multiple records efficiently.
+
+        Uses PostgreSQL's COPY or executemany for efficient bulk inserts.
+
+        Args:
+            table: Table name
+            records: List of dicts with column-value pairs
+            batch_size: Number of records to insert per batch
+            connection: Database connection (injected)
+
+        Returns:
+            Dict with 'inserted_count' and 'batches' keys
+
+        Example YAML:
+            - pg_batch_insert:
+                id: import_users
+                connection: db
+                table: users
+                records: ${previous_step.user_list}
+                batch_size: 500
+                outputs:
+                  - inserted_count
+        """
+        if not records:
+            return {'inserted_count': 0, 'batches': 0}
+
+        try:
+            # Get column names from first record
+            columns = list(records[0].keys())
+
+            # Build INSERT query
+            placeholders = ', '.join(f'${i+1}' for i in range(len(columns)))
+            query = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
+
+            inserted_count = 0
+            batch_count = 0
+
+            # Process in batches
+            async with connection.transaction():
+                for i in range(0, len(records), batch_size):
+                    batch = records[i:i + batch_size]
+
+                    # Prepare batch values
+                    batch_values = [
+                        tuple(record[col] for col in columns)
+                        for record in batch
+                    ]
+
+                    # Execute batch
+                    await connection.executemany(query, batch_values)
+
+                    inserted_count += len(batch)
+                    batch_count += 1
+
+            return {
+                'inserted_count': inserted_count,
+                'batches': batch_count,
+                'table': table
+            }
+
+        except Exception as e:
+            raise FlowExecutionError(
+                f"PostgreSQL batch insert failed: {e}"
+            ) from e
+
+    async def _task_batch_update(
+        self,
+        table: str,
+        updates: List[Dict[str, Any]],
+        key_field: str = 'id',
+        batch_size: int = 1000,
+        connection=None
+    ) -> Dict[str, Any]:
+        """
+        Built-in task: Batch update multiple records efficiently.
+
+        Args:
+            table: Table name
+            updates: List of dicts with column-value pairs (must include key_field)
+            key_field: Field to use for WHERE clause (default: 'id')
+            batch_size: Number of records to update per batch
+            connection: Database connection (injected)
+
+        Returns:
+            Dict with 'updated_count' and 'batches' keys
+
+        Example YAML:
+            - pg_batch_update:
+                id: update_prices
+                connection: db
+                table: products
+                key_field: product_id
+                updates: ${previous_step.price_changes}
+                batch_size: 500
+                outputs:
+                  - updated_count
+        """
+        if not updates:
+            return {'updated_count': 0, 'batches': 0}
+
+        try:
+            # Verify key_field exists in all records
+            if not all(key_field in record for record in updates):
+                raise ValueError(f"All update records must contain '{key_field}' field")
+
+            # Get column names from first record (excluding key field)
+            columns = [col for col in updates[0].keys() if col != key_field]
+
+            # Build UPDATE query
+            set_clause = ', '.join(f'{col} = ${i+2}' for i, col in enumerate(columns))
+            query = f"UPDATE {table} SET {set_clause} WHERE {key_field} = $1"
+
+            updated_count = 0
+            batch_count = 0
+
+            # Process in batches
+            async with connection.transaction():
+                for i in range(0, len(updates), batch_size):
+                    batch = updates[i:i + batch_size]
+
+                    # Prepare batch values: (key_value, col1_value, col2_value, ...)
+                    batch_values = [
+                        tuple([record[key_field]] + [record[col] for col in columns])
+                        for record in batch
+                    ]
+
+                    # Execute batch
+                    results = await connection.executemany(query, batch_values)
+
+                    # Count affected rows (results might be a string like "UPDATE 5")
+                    # For executemany, we just count the batch size
+                    updated_count += len(batch)
+                    batch_count += 1
+
+            return {
+                'updated_count': updated_count,
+                'batches': batch_count,
+                'table': table
+            }
+
+        except Exception as e:
+            raise FlowExecutionError(
+                f"PostgreSQL batch update failed: {e}"
             ) from e
 
     def get_dependencies(self) -> List[str]:

@@ -20,6 +20,7 @@ from .exceptions import (
 from .cancellation import CancellationToken, CancellationError
 from .connections.manager import ConnectionManager
 from .connections import plugin_registry
+from .subflow_loader import SubflowLoader
 
 
 class FlowExecutor:
@@ -35,14 +36,16 @@ class FlowExecutor:
     - Subflow execution
     """
 
-    def __init__(self, registry: TaskRegistry):
+    def __init__(self, registry: TaskRegistry, subflow_loader: Optional[SubflowLoader] = None):
         """
         Initialize the flow executor.
 
         Args:
             registry: TaskRegistry containing task implementations
+            subflow_loader: Optional SubflowLoader for subflow discovery and loading
         """
         self.registry = registry
+        self.subflow_loader = subflow_loader
         self._event_callback: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
         self._flow_start_time: float = 0.0
         self._flow_silent: bool = False  # Flow-level silent flag
@@ -719,19 +722,98 @@ class FlowExecutor:
         step: Dict,
         context: FlowContext
     ):
-        """Execute a subflow"""
+        """
+        Execute a subflow.
+
+        Syntax:
+            - subflow: ValidateUser
+              id: validation
+              inputs:
+                user_id: ${inputs.user_id}
+              outputs:
+                - is_valid
+                - user_data
+        """
         subflow_name = step['subflow']
+        step_id = step.get('id', subflow_name)
+
+        # Check if subflow loader is available
+        if not self.subflow_loader:
+            raise FlowExecutionError(
+                f"Cannot execute subflow '{subflow_name}': No subflow loader configured. "
+                f"Pass a SubflowLoader when creating FlowExecutor."
+            )
 
         # Resolve inputs for the subflow
         subflow_inputs = {}
         if 'inputs' in step:
             subflow_inputs = context.resolve_value(step['inputs'])
 
-        # Load the subflow definition (would need to be passed in or loaded)
-        # For now, raise an error
-        raise NotImplementedError(
-            "Subflow execution requires a flow loader to be implemented"
-        )
+        # Check for circular dependencies
+        self.subflow_loader.enter_subflow(subflow_name)
+
+        # Emit subflow_started event
+        step_start_time = time.time()
+        await self._emit_event('subflow_started', {
+            'subflow_name': subflow_name,
+            'step_id': step_id,
+            'inputs': subflow_inputs,
+            'call_stack': self.subflow_loader.get_call_stack()
+        })
+
+        try:
+            # Load the subflow definition
+            subflow_yaml, subflow_def = self.subflow_loader.load_subflow(subflow_name)
+
+            # Create a new executor for the subflow (reuses registry and subflow_loader)
+            subflow_executor = FlowExecutor(self.registry, self.subflow_loader)
+
+            # Pass along the event callback if configured
+            subflow_executor._event_callback = self._event_callback
+
+            # Execute the subflow with the provided inputs
+            result = await subflow_executor.execute_flow(
+                subflow_def,
+                inputs=subflow_inputs,
+                cancellation_token=context.cancellation_token
+            )
+
+            # Check if subflow succeeded
+            if not result.get('success', False):
+                error = result.get('error', 'Subflow execution failed')
+                raise FlowExecutionError(
+                    f"Subflow '{subflow_name}' failed: {error}"
+                )
+
+            # Store subflow outputs in parent context
+            subflow_outputs = result.get('outputs', {})
+            if step.get('id'):
+                context.set_step_output(step_id, subflow_outputs)
+
+            # Emit subflow_completed event
+            step_duration_ms = (time.time() - step_start_time) * 1000
+            await self._emit_event('subflow_completed', {
+                'subflow_name': subflow_name,
+                'step_id': step_id,
+                'outputs': subflow_outputs,
+                'duration_ms': step_duration_ms
+            })
+
+        except Exception as e:
+            # Emit subflow_failed event
+            step_duration_ms = (time.time() - step_start_time) * 1000
+            await self._emit_event('subflow_failed', {
+                'subflow_name': subflow_name,
+                'step_id': step_id,
+                'error': str(e),
+                'error_type': type(e).__name__,
+                'duration_ms': step_duration_ms
+            })
+            raise
+
+        finally:
+            # Always exit the subflow from the call stack
+            self.subflow_loader.exit_subflow(subflow_name)
 
     async def _execute_exit_step(
         self,

@@ -1,0 +1,60 @@
+flow: ValidateUser
+description: Validate user credentials and permissions
+
+inputs:
+  - name: user_id
+    type: string
+    required: true
+    description: User ID to validate
+
+  - name: required_role
+    type: string
+    required: false
+    description: Required role for access
+
+steps:
+  - task: CheckUserExists
+    id: check_exists
+    inputs:
+      user_id: ${inputs.user_id}
+    outputs:
+      - exists
+      - user_data
+
+  - if: ${check_exists.exists} == false
+    then:
+      - exit:
+          reason: "User not found"
+          outputs:
+            is_valid: false
+            reason: "User ${inputs.user_id} does not exist"
+
+  - task: CheckUserRole
+    id: check_role
+    inputs:
+      user_data: ${check_exists.user_data}
+      required_role: ${inputs.required_role}
+    outputs:
+      - has_role
+      - user_role
+
+  - task: CheckUserStatus
+    id: check_status
+    inputs:
+      user_data: ${check_exists.user_data}
+    outputs:
+      - is_active
+      - status
+
+outputs:
+  - name: is_valid
+    value: ${check_role.has_role} and ${check_status.is_active}
+
+  - name: user_data
+    value: ${check_exists.user_data}
+
+  - name: user_role
+    value: ${check_role.user_role}
+
+  - name: status
+    value: ${check_status.status}

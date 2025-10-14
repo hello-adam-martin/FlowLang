@@ -1,0 +1,116 @@
+flow: SendNotification
+description: Send notification via multiple channels
+
+inputs:
+  - name: user_id
+    type: string
+    required: true
+
+  - name: message
+    type: string
+    required: true
+
+  - name: notification_type
+    type: string
+    required: true
+    description: "Type: email, sms, push, or all"
+
+  - name: priority
+    type: string
+    required: false
+    description: "Priority: low, normal, high"
+
+steps:
+  - task: GetUserPreferences
+    id: prefs
+    inputs:
+      user_id: ${inputs.user_id}
+    outputs:
+      - email
+      - phone
+      - push_token
+      - preferences
+
+  - switch: ${inputs.notification_type}
+    cases:
+      - when: "email"
+        do:
+          - task: SendEmail
+            id: send_email
+            inputs:
+              to: ${prefs.email}
+              message: ${inputs.message}
+              priority: ${inputs.priority}
+            outputs:
+              - message_id
+              - sent
+
+      - when: "sms"
+        do:
+          - task: SendSMS
+            id: send_sms
+            inputs:
+              to: ${prefs.phone}
+              message: ${inputs.message}
+            outputs:
+              - message_id
+              - sent
+
+      - when: "push"
+        do:
+          - task: SendPush
+            id: send_push
+            inputs:
+              token: ${prefs.push_token}
+              message: ${inputs.message}
+            outputs:
+              - message_id
+              - sent
+
+      - when: "all"
+        do:
+          - parallel:
+              - task: SendEmail
+                id: email
+                inputs:
+                  to: ${prefs.email}
+                  message: ${inputs.message}
+                  priority: ${inputs.priority}
+
+              - task: SendSMS
+                id: sms
+                inputs:
+                  to: ${prefs.phone}
+                  message: ${inputs.message}
+
+              - task: SendPush
+                id: push
+                inputs:
+                  token: ${prefs.push_token}
+                  message: ${inputs.message}
+
+      - default:
+          - exit:
+              reason: "Invalid notification type"
+              outputs:
+                success: false
+                error: "Notification type must be: email, sms, push, or all"
+
+  - task: LogNotification
+    id: log
+    inputs:
+      user_id: ${inputs.user_id}
+      type: ${inputs.notification_type}
+      message: ${inputs.message}
+    outputs:
+      - log_id
+
+outputs:
+  - name: success
+    value: true
+
+  - name: log_id
+    value: ${log.log_id}
+
+  - name: notification_type
+    value: ${inputs.notification_type}

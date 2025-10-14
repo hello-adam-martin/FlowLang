@@ -1,0 +1,199 @@
+# YAML Test Fixtures for HelloWorld Flow
+# This file demonstrates data-driven testing with YAMLFixtureLoader
+
+test_cases:
+  # Valid user scenarios
+  - name: valid_user_alice
+    description: Test greeting for user Alice
+    inputs:
+      user_name: "Alice"
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: true
+          validation_message: "User is valid"
+      GenerateGreeting:
+        return_value:
+          greeting: "Hello, Alice!"
+          timestamp: "2025-10-14T10:00:00Z"
+    expected_outputs:
+      message: "Hello, Alice!"
+      timestamp: "2025-10-14T10:00:00Z"
+    expect_success: true
+
+  - name: valid_user_bob
+    description: Test greeting for user Bob
+    inputs:
+      user_name: "Bob"
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: true
+          validation_message: "User is valid"
+      GenerateGreeting:
+        return_value:
+          greeting: "Hello, Bob!"
+          timestamp: "2025-10-14T11:00:00Z"
+    expected_outputs:
+      message: "Hello, Bob!"
+      timestamp: "2025-10-14T11:00:00Z"
+    expect_success: true
+
+  - name: valid_user_with_special_chars
+    description: Test greeting with special characters in name
+    inputs:
+      user_name: "José María"
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: true
+          validation_message: "User is valid"
+      GenerateGreeting:
+        return_value:
+          greeting: "Hello, José María!"
+          timestamp: "2025-10-14T12:00:00Z"
+    expected_outputs:
+      message: "Hello, José María!"
+      timestamp: "2025-10-14T12:00:00Z"
+    expect_success: true
+
+  # Invalid user scenarios
+  - name: empty_user_name
+    description: Test validation failure with empty name
+    inputs:
+      user_name: ""
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: false
+          validation_message: "Name cannot be empty"
+      GenerateErrorMessage:
+        return_value:
+          error_message: "Error: Name cannot be empty"
+    expect_success: true  # Flow succeeds but takes error path
+    expect_no_output: message  # message output should not exist in error path
+
+  - name: short_user_name
+    description: Test validation failure with short name
+    inputs:
+      user_name: "A"
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: false
+          validation_message: "Name must be at least 2 characters"
+      GenerateErrorMessage:
+        return_value:
+          error_message: "Error: Name must be at least 2 characters"
+    expect_success: true  # Flow succeeds but takes error path
+    expect_no_output: message
+
+  - name: invalid_characters
+    description: Test validation failure with invalid characters
+    inputs:
+      user_name: "User@123"
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: false
+          validation_message: "Name contains invalid characters"
+      GenerateErrorMessage:
+        return_value:
+          error_message: "Error: Name contains invalid characters"
+    expect_success: true
+    expect_no_output: message
+
+  # Error scenarios
+  - name: validation_task_fails
+    description: Test when ValidateUser raises an exception
+    inputs:
+      user_name: "TestUser"
+    mock_tasks:
+      ValidateUser:
+        raises: "ValueError: Database connection failed"
+    expect_success: false
+    expected_error_contains: "ValidateUser"
+
+  - name: greeting_task_fails
+    description: Test when GenerateGreeting raises an exception
+    inputs:
+      user_name: "TestUser"
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: true
+          validation_message: "Valid"
+      GenerateGreeting:
+        raises: "RuntimeError: Template rendering failed"
+    expect_success: false
+    expected_error_contains: "GenerateGreeting"
+
+  # Edge cases
+  - name: very_long_name
+    description: Test with very long user name
+    inputs:
+      user_name: "Hubert Blaine Wolfeschlegelsteinhausenbergerdorff Sr."
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: true
+          validation_message: "User is valid"
+      GenerateGreeting:
+        return_value:
+          greeting: "Hello, Hubert Blaine Wolfeschlegelsteinhausenbergerdorff Sr.!"
+          timestamp: "2025-10-14T13:00:00Z"
+    expected_outputs:
+      message: "Hello, Hubert Blaine Wolfeschlegelsteinhausenbergerdorff Sr.!"
+    expect_success: true
+
+  - name: unicode_emoji_name
+    description: Test with Unicode emoji in name
+    inputs:
+      user_name: "Alex 😊"
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: true
+          validation_message: "User is valid"
+      GenerateGreeting:
+        return_value:
+          greeting: "Hello, Alex 😊!"
+          timestamp: "2025-10-14T14:00:00Z"
+    expected_outputs:
+      message: "Hello, Alex 😊!"
+    expect_success: true
+
+# Performance test cases
+performance_test_cases:
+  - name: performance_baseline
+    description: Test flow execution time with minimal work
+    inputs:
+      user_name: "TestUser"
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: true
+          validation_message: "Valid"
+      GenerateGreeting:
+        return_value:
+          greeting: "Hello, TestUser!"
+          timestamp: "2025-10-14T15:00:00Z"
+    expect_success: true
+    max_execution_time_seconds: 0.5  # Should complete in under 500ms
+
+  - name: performance_stress
+    description: Test with 100 sequential executions
+    repeat_count: 100
+    inputs:
+      user_name: "StressTest"
+    mock_tasks:
+      ValidateUser:
+        return_value:
+          is_valid: true
+          validation_message: "Valid"
+      GenerateGreeting:
+        return_value:
+          greeting: "Hello, StressTest!"
+          timestamp: "2025-10-14T16:00:00Z"
+    expect_success: true
+    max_total_time_seconds: 10  # All 100 should complete in under 10 seconds

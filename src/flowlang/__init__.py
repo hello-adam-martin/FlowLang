@@ -10,6 +10,7 @@ from .context import FlowContext
 from .scaffolder import FlowScaffolder
 from .server import FlowServer, create_server
 from .validator import FlowValidator, validate_flow, ValidationResult, ValidationError
+from .subflow_loader import SubflowLoader
 from .exceptions import (
     FlowLangError,
     TaskNotFoundError,
@@ -47,6 +48,7 @@ __all__ = [
     "validate_flow",
     "ValidationResult",
     "ValidationError",
+    "SubflowLoader",
     "FlowLangError",
     "TaskNotFoundError",
     "FlowValidationError",
