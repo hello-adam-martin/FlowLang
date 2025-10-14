@@ -1,5 +1,11 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { createRoot } from 'react-dom/client';
+import { ReactFlowProvider } from '@xyflow/react';
 import type { NodeTemplate, FlowNodeType } from '../../types/node';
+import TaskNode from '../nodes/TaskNode';
+import LoopContainerNode from '../nodes/LoopContainerNode';
+import ConditionalContainerNode from '../nodes/ConditionalContainerNode';
+import ParallelContainerNode from '../nodes/ParallelContainerNode';
 
 const nodeTemplates: NodeTemplate[] = [
   {
@@ -28,12 +34,105 @@ const nodeTemplates: NodeTemplate[] = [
   },
 ];
 
+// Create drag preview by rendering actual React component
+const createDragPreview = (nodeType: FlowNodeType): HTMLElement => {
+  const preview = document.createElement('div');
+  preview.style.position = 'absolute';
+  preview.style.top = '-1000px';
+  preview.style.pointerEvents = 'none';
+
+  // Create default node data
+  const defaultData = {
+    label: 'New Task',
+    step: nodeType === 'task' ? { id: 'preview', task: undefined, inputs: {}, outputs: [] } : {},
+  };
+
+  // Set fixed dimensions for containers
+  if (nodeType !== 'task') {
+    if (nodeType === 'conditionalContainer') {
+      preview.style.width = '600px';
+      preview.style.height = '300px';
+    } else {
+      preview.style.width = '450px';
+      preview.style.height = '195px';
+    }
+  }
+
+  // Render the appropriate node component
+  const root = createRoot(preview);
+  const nodeProps: any = {
+    id: 'preview',
+    data: defaultData,
+    selected: false,
+    type: nodeType,
+  };
+
+  let nodeComponent;
+  switch (nodeType) {
+    case 'task':
+      nodeComponent = <TaskNode {...nodeProps} />;
+      break;
+    case 'loopContainer':
+      nodeComponent = <LoopContainerNode {...nodeProps} />;
+      break;
+    case 'conditionalContainer':
+      nodeComponent = <ConditionalContainerNode {...nodeProps} />;
+      break;
+    case 'parallelContainer':
+      nodeComponent = <ParallelContainerNode {...nodeProps} />;
+      break;
+  }
+
+  // Wrap in ReactFlowProvider to satisfy hooks
+  root.render(<ReactFlowProvider>{nodeComponent}</ReactFlowProvider>);
+
+  document.body.appendChild(preview);
+
+  // Store root for cleanup
+  (preview as any)._root = root;
+
+  return preview;
+};
+
 export default function NodeLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
+  const dragPreviewRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    // Cleanup on unmount
+    return () => {
+      if (dragPreviewRef.current) {
+        // Unmount React root
+        const root = (dragPreviewRef.current as any)._root;
+        if (root) {
+          root.unmount();
+        }
+        document.body.removeChild(dragPreviewRef.current);
+      }
+    };
+  }, []);
 
   const onDragStart = (event: React.DragEvent, nodeType: FlowNodeType) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
     event.dataTransfer.effectAllowed = 'move';
+
+    // Create and set custom drag preview
+    const preview = createDragPreview(nodeType);
+    dragPreviewRef.current = preview;
+    event.dataTransfer.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
+  };
+
+  const onDragEnd = () => {
+    // Clean up drag preview
+    if (dragPreviewRef.current) {
+      // Unmount React root
+      const root = (dragPreviewRef.current as any)._root;
+      if (root) {
+        root.unmount();
+      }
+      document.body.removeChild(dragPreviewRef.current);
+      dragPreviewRef.current = null;
+    }
   };
 
   const filteredTemplates = nodeTemplates.filter(
@@ -76,6 +175,7 @@ export default function NodeLibrary() {
             key={template.type}
             draggable
             onDragStart={(e) => onDragStart(e, template.type)}
+            onDragEnd={onDragEnd}
             className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg cursor-move hover:border-blue-400 hover:shadow-md transition-all"
           >
             <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">

@@ -17,6 +17,22 @@ body {
   box-shadow: none !important;
 }
 
+/* Increase z-index when dragging nodes - apply to wrapper */
+.react-flow__node.dragging,
+.react-flow__node.selected.dragging,
+.react-flow__node-default.dragging {
+  z-index: 9999 !important;
+}
+
+/* Make sure parent containers don't interfere */
+.react-flow__renderer {
+  position: relative;
+}
+
+.react-flow__nodes {
+  position: relative;
+}
+
 .react-flow__handle {
   width: 8px;
   height: 8px;
@@ -29,6 +45,31 @@ body {
   border-color: #ef4444 !important;
   border-width: 3px !important;
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2) !important;
+}
+
+/* Container drag-over styling - dashed border to indicate drop zone */
+/* Loop container - purple */
+.react-flow__node-loopContainer.container-drag-over > div {
+  border-style: dashed !important;
+  border-width: 3px !important;
+  border-color: #c084fc !important;
+  background-color: rgba(192, 132, 252, 0.05) !important;
+}
+
+/* Parallel container - green */
+.react-flow__node-parallelContainer.container-drag-over > div {
+  border-style: dashed !important;
+  border-width: 3px !important;
+  border-color: #4ade80 !important;
+  background-color: rgba(74, 222, 128, 0.05) !important;
+}
+
+/* Conditional container - amber */
+.react-flow__node-conditionalContainer.container-drag-over > div {
+  border-style: dashed !important;
+  border-width: 3px !important;
+  border-color: #fbbf24 !important;
+  background-color: rgba(251, 191, 36, 0.05) !important;
 }
 
 /* Edge styling */
@@ -71,6 +112,8 @@ body {
   align-items: center;
   justify-content: center;
   padding: 0;
+  z-index: 9999;
+  position: relative;
 }
 
 .edge-delete-button:hover {

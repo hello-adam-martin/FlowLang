@@ -71,16 +71,15 @@ function TaskNode({ data, selected, id }: NodeProps) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-xs font-medium text-gray-900 truncate">
-            {nodeData.label}
+            {nodeData.label || 'New Task'}
           </div>
+          {nodeData.step?.task && (
+            <div className="text-[10px] text-gray-600 font-mono truncate">
+              {nodeData.step.task}
+            </div>
+          )}
         </div>
       </div>
-
-      {nodeData.step?.task && (
-        <div className="mt-1.5 text-[10px] text-gray-500 font-mono truncate">
-          {nodeData.step.task}
-        </div>
-      )}
 
       {hasErrors && (
         <div className="mt-1.5 text-[10px] text-red-600 truncate">

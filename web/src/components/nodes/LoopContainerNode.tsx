@@ -1,5 +1,5 @@
-import { memo, useCallback } from 'react';
-import { Handle, Position, type NodeProps, useReactFlow } from '@xyflow/react';
+import { memo, useCallback, useMemo } from 'react';
+import { Handle, Position, type NodeProps, useReactFlow, NodeResizer } from '@xyflow/react';
 import type { FlowNodeData } from '../../types/node';
 import { useFlowStore } from '../../store/flowStore';
 
@@ -7,14 +7,18 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
   const nodeData = data as FlowNodeData;
   const { getNodes } = useReactFlow();
   const removeNode = useFlowStore((state) => state.removeNode);
+  const nodes = useFlowStore((state) => state.nodes);
 
-  // Find child nodes
-  const childNodes = getNodes().filter((n) => n.parentId === id);
+  // Find child nodes - use useMemo to recalculate when nodes change
+  const childNodes = useMemo(() => {
+    return getNodes().filter((n) => n.parentId === id);
+  }, [nodes, id, getNodes]);
+
   const hasChildren = childNodes.length > 0;
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
-    event.stopPropagation();
+    // Don't stop propagation - allow parent to handle drag-over detection
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
@@ -24,14 +28,22 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
   };
 
   return (
-    <div
-      className={`relative bg-white/90 rounded-2xl border-2 transition-all ${
-        selected
-          ? 'border-purple-400 shadow-xl ring-2 ring-purple-200'
-          : 'border-purple-200 shadow-lg hover:shadow-xl hover:border-purple-300'
-      } min-w-[420px] min-h-[280px]`}
-      onDragOver={onDragOver}
-    >
+    <>
+      <NodeResizer
+        color="#a855f7"
+        isVisible={selected}
+        minWidth={450}
+        minHeight={195}
+        keepAspectRatio={false}
+      />
+      <div
+        className={`relative bg-white/90 rounded-2xl border-2 transition-all ${
+          selected
+            ? 'border-purple-400 shadow-xl ring-2 ring-purple-200'
+            : 'border-purple-200 shadow-lg hover:shadow-xl hover:border-purple-300'
+        } w-full h-full flex flex-col`}
+        onDragOver={onDragOver}
+      >
       {/* Delete button - shows when selected */}
       {selected && (
         <button
@@ -45,11 +57,9 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
         </button>
       )}
 
-      {/* Handles on all four sides - works as both source and target with connectionMode="loose" */}
-      <Handle type="source" position={Position.Top} id="top" className="w-2.5 h-2.5 bg-purple-500 border-2 border-white shadow-sm" />
-      <Handle type="source" position={Position.Right} id="right" className="w-2.5 h-2.5 bg-purple-500 border-2 border-white shadow-sm" />
-      <Handle type="source" position={Position.Bottom} id="bottom" className="w-2.5 h-2.5 bg-purple-500 border-2 border-white shadow-sm" />
+      {/* Handles - left (input) and right (output) only */}
       <Handle type="source" position={Position.Left} id="left" className="w-2.5 h-2.5 bg-purple-500 border-2 border-white shadow-sm" />
+      <Handle type="source" position={Position.Right} id="right" className="w-2.5 h-2.5 bg-purple-500 border-2 border-white shadow-sm" />
 
       {/* Header with subtle gradient */}
       <div className="bg-gradient-to-r from-purple-50 to-purple-100 border-b-2 border-purple-200 px-4 py-3 rounded-t-2xl">
@@ -62,34 +72,33 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
             <div className="text-xs text-purple-700">
               {nodeData.step?.for_each ? (
                 <>
-                  For each: <span className="font-mono font-medium">{nodeData.step.for_each}</span>
+                  <span className="font-mono font-medium">{nodeData.step.for_each}</span>
                   {nodeData.step?.as && <> as <span className="font-mono font-medium">{nodeData.step.as}</span></>}
                 </>
               ) : (
-                <span className="text-gray-500">Configure loop...</span>
+                <span className="text-gray-500 font-sans">Configure loop...</span>
               )}
             </div>
           </div>
+          {childNodes.length > 0 && (
+            <div className="text-xs font-medium text-purple-700">
+              {childNodes.length} task{childNodes.length !== 1 ? 's' : ''}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Droppable body area */}
-      <div className="p-5 min-h-[200px]" data-dropzone="true">
+      <div className="p-5 flex-1 flex items-center justify-center" data-dropzone="true">
         {!hasChildren && (
-          <div className="flex items-center justify-center h-full border-2 border-dashed border-purple-300 rounded-xl bg-purple-50/30 backdrop-blur-sm">
-            <div className="text-center text-purple-600">
-              <div className="text-sm font-medium mb-1">Drop tasks here</div>
-              <div className="text-xs text-purple-500">Tasks will execute in a loop</div>
-            </div>
-          </div>
-        )}
-        {hasChildren && (
-          <div className="text-xs font-medium text-purple-700">
-            {childNodes.length} task{childNodes.length !== 1 ? 's' : ''} in loop
+          <div className="text-center text-purple-600">
+            <div className="text-sm font-medium mb-1">Drop tasks here</div>
+            <div className="text-xs text-purple-500">Tasks will execute in a loop</div>
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 

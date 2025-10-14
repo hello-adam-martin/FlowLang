@@ -11,6 +11,12 @@ export type FlowNodeType =
   | 'input'
   | 'output';
 
+// Track definition for parallel containers
+export interface ParallelTrack {
+  id: string;
+  taskId?: string; // ID of the task node assigned to this track
+}
+
 // Data stored in each node
 export interface FlowNodeData extends Record<string, unknown> {
   label: string;
@@ -19,6 +25,10 @@ export interface FlowNodeData extends Record<string, unknown> {
   config?: any;
   errors?: string[];
   validated?: boolean;
+  isEntryPoint?: boolean;  // Marks entry point for parallel tracks
+  section?: string;        // For conditional containers (then/else)
+  tracks?: ParallelTrack[]; // For parallel containers - explicit track definitions
+  trackId?: string;        // For tasks inside parallel containers - which track they belong to
 }
 
 // Extended ReactFlow node with our custom data

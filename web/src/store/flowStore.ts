@@ -23,6 +23,7 @@ interface FlowStore {
   addNode: (node: Node<FlowNodeData>) => void;
   removeNode: (nodeId: string) => void;
   updateNode: (nodeId: string, data: Partial<FlowNodeData>) => void;
+  updateFlowDefinition: (updates: Partial<FlowDefinition>) => void;
 
   // Reset
   reset: () => void;
@@ -106,6 +107,12 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
       nodes: get().nodes.map((node) =>
         node.id === nodeId ? { ...node, data: { ...node.data, ...data } } : node
       ),
+    });
+  },
+
+  updateFlowDefinition: (updates) => {
+    set({
+      flowDefinition: { ...get().flowDefinition, ...updates },
     });
   },
 

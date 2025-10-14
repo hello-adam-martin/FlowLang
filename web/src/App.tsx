@@ -3,11 +3,15 @@ import FlowDesigner from './components/FlowDesigner/FlowDesigner';
 import NodeLibrary from './components/NodeLibrary/NodeLibrary';
 import PropertyPanel from './components/PropertyPanel/PropertyPanel';
 import FlowToolbar from './components/FlowToolbar/FlowToolbar';
+import { useFlowStore } from './store/flowStore';
 import './index.css';
 
 function App() {
   const [showNodeLibrary, setShowNodeLibrary] = useState(false);
-  const [showProperties, setShowProperties] = useState(false);
+  const selectedNode = useFlowStore((state) => state.selectedNode);
+
+  // Show properties panel when a node is selected
+  const showProperties = selectedNode !== null;
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -47,7 +51,7 @@ function App() {
 
         {/* Center - Flow Designer */}
         <div className="flex-1">
-          <FlowDesigner />
+          <FlowDesigner onNodeCreated={() => setShowNodeLibrary(false)} />
         </div>
 
         {/* Right sidebar - Property Panel (hidden by default) */}

@@ -1,5 +1,5 @@
-import { memo, useCallback } from 'react';
-import { Handle, Position, type NodeProps, useReactFlow } from '@xyflow/react';
+import { memo, useCallback, useMemo } from 'react';
+import { Handle, Position, type NodeProps, useReactFlow, NodeResizer } from '@xyflow/react';
 import type { FlowNodeData } from '../../types/node';
 import { useFlowStore } from '../../store/flowStore';
 
@@ -7,15 +7,21 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
   const nodeData = data as FlowNodeData;
   const { getNodes } = useReactFlow();
   const removeNode = useFlowStore((state) => state.removeNode);
+  const nodes = useFlowStore((state) => state.nodes);
 
   // Find child nodes - we'll use node data to track which section they belong to
-  const childNodes = getNodes().filter((n) => n.parentId === id);
-  const thenNodes = childNodes.filter((n) => (n.data as any).section === 'then');
-  const elseNodes = childNodes.filter((n) => (n.data as any).section === 'else');
+  // Use useMemo to recalculate when nodes change
+  const { thenNodes, elseNodes } = useMemo(() => {
+    const childNodes = getNodes().filter((n) => n.parentId === id);
+    return {
+      thenNodes: childNodes.filter((n) => (n.data as any).section === 'then'),
+      elseNodes: childNodes.filter((n) => (n.data as any).section === 'else'),
+    };
+  }, [nodes, id, getNodes]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
-    event.stopPropagation();
+    // Don't stop propagation - allow parent to handle drag-over detection
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
@@ -25,13 +31,21 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
   };
 
   return (
-    <div
-      className={`relative bg-white/90 rounded-2xl border-2 transition-all ${
-        selected
-          ? 'border-amber-400 shadow-xl ring-2 ring-amber-200'
-          : 'border-amber-200 shadow-lg hover:shadow-xl hover:border-amber-300'
-      } min-w-[540px] min-h-[320px]`}
-    >
+    <>
+      <NodeResizer
+        color="#f59e0b"
+        isVisible={selected}
+        minWidth={600}
+        minHeight={300}
+        keepAspectRatio={false}
+      />
+      <div
+        className={`relative bg-white/90 rounded-2xl border-2 transition-all ${
+          selected
+            ? 'border-amber-400 shadow-xl ring-2 ring-amber-200'
+            : 'border-amber-200 shadow-lg hover:shadow-xl hover:border-amber-300'
+        } w-full h-full flex flex-col`}
+      >
       {/* Delete button - shows when selected */}
       {selected && (
         <button
@@ -45,11 +59,9 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
         </button>
       )}
 
-      {/* Handles on all four sides - works as both source and target with connectionMode="loose" */}
-      <Handle type="source" position={Position.Top} id="top" className="w-2.5 h-2.5 bg-amber-500 border-2 border-white shadow-sm" />
-      <Handle type="source" position={Position.Right} id="right" className="w-2.5 h-2.5 bg-amber-500 border-2 border-white shadow-sm" />
-      <Handle type="source" position={Position.Bottom} id="bottom" className="w-2.5 h-2.5 bg-amber-500 border-2 border-white shadow-sm" />
+      {/* Handles - left (input) and right (output) only */}
       <Handle type="source" position={Position.Left} id="left" className="w-2.5 h-2.5 bg-amber-500 border-2 border-white shadow-sm" />
+      <Handle type="source" position={Position.Right} id="right" className="w-2.5 h-2.5 bg-amber-500 border-2 border-white shadow-sm" />
 
       {/* Header with subtle gradient */}
       <div className="bg-gradient-to-r from-amber-50 to-amber-100 border-b-2 border-amber-200 px-4 py-3 rounded-t-2xl">
@@ -57,33 +69,60 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
           <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-sm">
             <span className="text-white text-sm font-bold">?</span>
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="font-semibold text-sm text-gray-900">Conditional</div>
-            <div className="text-xs text-amber-700 font-mono">
-              {nodeData.step?.if ? (
-                typeof nodeData.step.if === 'string'
-                  ? nodeData.step.if
-                  : 'complex condition'
+            {nodeData.step?.if ? (
+              typeof nodeData.step.if === 'string' ? (
+                // Simple condition
+                <div className="text-xs text-amber-700 font-mono truncate" title={nodeData.step.if}>
+                  {nodeData.step.if}
+                </div>
               ) : (
-                <span className="text-gray-500 font-sans">Configure condition...</span>
-              )}
-            </div>
+                // Quantified condition (all/any/none)
+                (() => {
+                  const conditionObj = nodeData.step.if as any;
+                  const type = Object.keys(conditionObj)[0] as 'all' | 'any' | 'none';
+                  const conditions = conditionObj[type] as string[];
+
+                  const typeLabel = {
+                    all: 'All conditions must be true:',
+                    any: 'At least one condition must be true:',
+                    none: 'No conditions must be true:',
+                  }[type];
+
+                  return (
+                    <div className="text-xs text-amber-800 mt-1">
+                      <div className="font-semibold mb-0.5">{typeLabel}</div>
+                      <ul className="space-y-0.5 ml-2">
+                        {conditions.map((condition, idx) => (
+                          <li key={idx} className="font-mono text-[10px] truncate" title={condition}>
+                            • {condition}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })()
+              )
+            ) : (
+              <div className="text-xs text-gray-500 font-sans">Configure condition...</div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Then/Else sections */}
-      <div className="flex p-5 gap-4 min-h-[240px]">
+      <div className="flex p-5 gap-4 flex-1 overflow-visible">
         {/* Then section */}
         <div
-          className="flex-1 border-2 border-dashed border-green-300 rounded-xl bg-green-50/40 backdrop-blur-sm p-4"
+          className="flex-1 border-2 border-dashed border-green-300 rounded-xl bg-green-50/40 backdrop-blur-sm p-4 min-h-[120px] min-w-[200px] flex flex-col"
           onDragOver={onDragOver}
           data-section="then"
           data-dropzone="true"
         >
           <div className="text-xs font-semibold text-green-700 mb-3">✓ Then</div>
           {thenNodes.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-green-600 text-xs text-center">
+            <div className="flex items-center justify-center flex-1 text-green-600 text-xs text-center">
               Drop tasks for<br/>true condition
             </div>
           ) : (
@@ -95,14 +134,14 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
 
         {/* Else section */}
         <div
-          className="flex-1 border-2 border-dashed border-red-300 rounded-xl bg-red-50/40 backdrop-blur-sm p-4"
+          className="flex-1 border-2 border-dashed border-red-300 rounded-xl bg-red-50/40 backdrop-blur-sm p-4 min-h-[120px] min-w-[200px] flex flex-col"
           onDragOver={onDragOver}
           data-section="else"
           data-dropzone="true"
         >
           <div className="text-xs font-semibold text-red-700 mb-3">✗ Else</div>
           {elseNodes.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-red-600 text-xs text-center">
+            <div className="flex items-center justify-center flex-1 text-red-600 text-xs text-center">
               Drop tasks for<br/>false condition
             </div>
           ) : (
@@ -112,7 +151,8 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
