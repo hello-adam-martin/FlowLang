@@ -121,3 +121,43 @@ body {
   opacity: 1;
   transform: scale(1.1);
 }
+
+/* Connection validation tooltip */
+.connection-tooltip {
+  pointer-events: none;
+  animation: tooltipFadeIn 0.2s ease-out;
+}
+
+.connection-tooltip-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: normal;
+  max-width: 300px;
+  word-wrap: break-word;
+}
+
+.connection-tooltip-content svg {
+  flex-shrink: 0;
+  color: #dc2626;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -110%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -120%) scale(1);
+  }
+}
+

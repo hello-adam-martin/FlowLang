@@ -20,19 +20,28 @@ import { useFlowStore } from '../../store/flowStore';
 import type { FlowNodeData, FlowNodeType } from '../../types/node';
 
 // Import custom node types
+import StartNode from '../nodes/StartNode';
 import TaskNode from '../nodes/TaskNode';
 import LoopContainerNode from '../nodes/LoopContainerNode';
 import ConditionalContainerNode from '../nodes/ConditionalContainerNode';
+import SwitchContainerNode from '../nodes/SwitchContainerNode';
 import ParallelContainerNode from '../nodes/ParallelContainerNode';
+import SubflowNode from '../nodes/SubflowNode';
+import ExitNode from '../nodes/ExitNode';
 
 // Import custom edge types
 import DeletableEdge from '../edges/DeletableEdge';
+import ConnectionTooltip from './ConnectionTooltip';
 
 const nodeTypes = {
+  start: StartNode,
   task: TaskNode,
   loopContainer: LoopContainerNode,
   conditionalContainer: ConditionalContainerNode,
+  switchContainer: SwitchContainerNode,
   parallelContainer: ParallelContainerNode,
+  subflow: SubflowNode,
+  exit: ExitNode,
 };
 
 const edgeTypes = {
@@ -42,9 +51,10 @@ const edgeTypes = {
 
 interface FlowDesignerProps {
   onNodeCreated?: () => void;
+  reactFlowInstanceRef?: React.MutableRefObject<ReactFlowInstance | null>;
 }
 
-export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
+export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: externalRef }: FlowDesignerProps) {
   const {
     nodes,
     edges,
@@ -58,11 +68,17 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
   const [connectingFrom, setConnectingFrom] = useState<{ nodeId: string; handleId: string | null } | null>(null);
+  const connectingFromRef = useRef<{ nodeId: string; handleId: string | null } | null>(null);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragOverContainerId, setDragOverContainerId] = useState<string | null>(null);
   const [isPanelDragging, setIsPanelDragging] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
   const hasInitiallyFit = useRef(false);
   const nodeIdCounter = useRef(0);
+  const [connectionTooltip, setConnectionTooltip] = useState<{
+    message: string;
+    position: { x: number; y: number };
+  } | null>(null);
 
   // Initialize counter from existing nodes on mount
   useEffect(() => {
@@ -103,7 +119,17 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
+    setConnectionTooltip(null); // Clear tooltip when clicking pane
   }, [setSelectedNode]);
+
+
+  const onMoveStart = useCallback(() => {
+    setIsPanning(true);
+  }, []);
+
+  const onMoveEnd = useCallback(() => {
+    setIsPanning(false);
+  }, []);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -129,6 +155,7 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
       (node) =>
         node.type === 'loopContainer' ||
         node.type === 'conditionalContainer' ||
+        node.type === 'switchContainer' ||
         node.type === 'parallelContainer'
     );
 
@@ -158,22 +185,23 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
     }
   }, [dragOverContainerId, isPanelDragging, nodes, reactFlowInstance]);
 
-  const isValidConnection = useCallback(
-    (connection: any) => {
+  // Get validation message for a connection attempt (returns null if valid)
+  const getConnectionValidationMessage = useCallback(
+    (connection: any): string | null => {
       const { source, target, sourceHandle, targetHandle } = connection;
 
       // Rule 1: Node cannot connect to itself
       if (source === target) {
-        return false;
+        return 'Cannot connect a node to itself';
       }
 
-      // Rule 2: Nodes cannot be connected more than once (check if connection already exists)
+      // Rule 2: Nodes cannot be connected more than once
       const connectionExists = edges.some(
         edge => (edge.source === source && edge.target === target) ||
                 (edge.source === target && edge.target === source)
       );
       if (connectionExists) {
-        return false;
+        return 'Connection already exists between these nodes';
       }
 
       // Rule 3: Check if source handle is already used as a target
@@ -188,7 +216,7 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
 
       // Reject connection if handle is already locked to the opposite direction
       if (sourceHandleUsedAsTarget || targetHandleUsedAsSource) {
-        return false;
+        return 'This handle is already connected in the opposite direction';
       }
 
       // Rule 5: Nodes inside a container cannot connect to nodes outside the container
@@ -198,22 +226,105 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
       if (sourceNode && targetNode) {
         // Check if one is in a container and the other is not, or if they're in different containers
         if (sourceNode.parentId !== targetNode.parentId) {
-          return false;
+          return 'Cannot connect nodes in different containers';
         }
       }
 
-      return true;
+      return null; // Valid connection
     },
     [edges, nodes]
   );
 
+  const isValidConnection = useCallback(
+    (connection: any) => {
+      return getConnectionValidationMessage(connection) === null;
+    },
+    [getConnectionValidationMessage]
+  );
+
   const onConnectStart: OnConnectStart = useCallback((_, params) => {
-    setConnectingFrom({ nodeId: params.nodeId as string, handleId: params.handleId });
+    const connectionInfo = { nodeId: params.nodeId as string, handleId: params.handleId };
+    setConnectingFrom(connectionInfo);
+    connectingFromRef.current = connectionInfo;
   }, []);
 
-  const onConnectEnd: OnConnectEnd = useCallback(() => {
+  const onConnectEnd: OnConnectEnd = useCallback((event) => {
+    const connecting = connectingFromRef.current;
+
+    // Always check if we were attempting a connection
+    if (connecting && event) {
+      const mouseX = (event as MouseEvent).clientX;
+      const mouseY = (event as MouseEvent).clientY;
+
+      // If we have mouse coordinates, find what's under the cursor
+      if (mouseX && mouseY) {
+        // Temporarily hide connection line elements to detect what's underneath
+        const connectionLines = document.querySelectorAll('.react-flow__connectionline');
+        const originalPointerEvents: string[] = [];
+        connectionLines.forEach((line, i) => {
+          const el = line as HTMLElement;
+          originalPointerEvents[i] = el.style.pointerEvents;
+          el.style.pointerEvents = 'none';
+        });
+
+        // Get all elements at the point (not just the top one)
+        const elementsAtPoint = document.elementsFromPoint(mouseX, mouseY);
+
+        // Restore pointer events
+        connectionLines.forEach((line, i) => {
+          (line as HTMLElement).style.pointerEvents = originalPointerEvents[i];
+        });
+
+        // Find the first element that is a node (not just any element with data-id)
+        let targetNodeElement: Element | null = null;
+        for (const element of elementsAtPoint) {
+          // Check if element or parent is a react-flow node
+          if (element.classList.contains('react-flow__node')) {
+            targetNodeElement = element;
+            break;
+          }
+          const nodeEl = element.closest('.react-flow__node');
+          if (nodeEl) {
+            targetNodeElement = nodeEl;
+            break;
+          }
+        }
+
+        if (targetNodeElement) {
+          const targetNodeId = targetNodeElement.getAttribute('data-id');
+
+          // Check if this would be an invalid connection
+          if (targetNodeId && targetNodeId !== connecting.nodeId) {
+            const validationMessage = getConnectionValidationMessage({
+              source: connecting.nodeId,
+              target: targetNodeId,
+              sourceHandle: connecting.handleId,
+              targetHandle: null,
+            });
+
+            // Show tooltip if connection is invalid
+            if (validationMessage) {
+              setConnectionTooltip({
+                message: validationMessage,
+                position: {
+                  x: mouseX,
+                  y: mouseY,
+                },
+              });
+
+              // Auto-hide tooltip after 3 seconds
+              setTimeout(() => {
+                setConnectionTooltip(null);
+              }, 3000);
+            }
+          }
+        }
+      }
+    }
+
     setConnectingFrom(null);
-  }, []);
+    connectingFromRef.current = null;
+  }, [getConnectionValidationMessage]);
 
   const onNodeDragStart = useCallback(
     (_event: React.MouseEvent, node: any) => {
@@ -283,6 +394,7 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
             containerNode.id !== node.id &&
             (containerNode.type === 'loopContainer' ||
               containerNode.type === 'conditionalContainer' ||
+              containerNode.type === 'switchContainer' ||
               containerNode.type === 'parallelContainer')
           ) {
             // Don't reparent if already a child of this container
@@ -351,9 +463,35 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
       setDragOverContainerId(null); // Clear drag-over state
       setIsPanelDragging(false); // Clear panel dragging state
 
-      const type = event.dataTransfer.getData('application/reactflow') as FlowNodeType;
+      const dragData = event.dataTransfer.getData('application/reactflow');
 
-      if (!type || !reactFlowInstance.current) {
+      if (!dragData || !reactFlowInstance.current) {
+        return;
+      }
+
+      // Try to parse as JSON first (connection tasks), fall back to string (standard nodes)
+      let type: FlowNodeType;
+      let taskData: any = null;
+
+      try {
+        const parsed = JSON.parse(dragData);
+        if (parsed.type === 'task' && parsed.taskName && parsed.connectionName && parsed.metadata) {
+          // This is a connection task with metadata
+          type = 'task';
+          taskData = {
+            taskName: parsed.taskName,
+            connectionName: parsed.connectionName,
+            metadata: parsed.metadata,
+          };
+        } else {
+          type = dragData as FlowNodeType;
+        }
+      } catch {
+        // Not JSON, treat as plain node type
+        type = dragData as FlowNodeType;
+      }
+
+      if (!type) {
         return;
       }
 
@@ -361,15 +499,18 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
       let nodeWidth: number;
       let nodeHeight: number;
 
-      if (type === 'task') {
+      if (type === 'task' || type === 'subflow') {
         nodeWidth = 200;
         nodeHeight = 80;
-      } else if (type === 'conditionalContainer') {
+      } else if (type === 'exit') {
+        nodeWidth = 160;
+        nodeHeight = 60;
+      } else if (type === 'conditionalContainer' || type === 'switchContainer') {
         nodeWidth = 600;
         nodeHeight = 300;
       } else if (type === 'parallelContainer') {
         nodeWidth = 450;
-        nodeHeight = 140;
+        nodeHeight = 150;
       } else {
         // loopContainer
         nodeWidth = 450;
@@ -407,6 +548,7 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
         if (containerNodeData && (
           containerNodeData.type === 'loopContainer' ||
           containerNodeData.type === 'conditionalContainer' ||
+          containerNodeData.type === 'switchContainer' ||
           containerNodeData.type === 'parallelContainer'
         )) {
           parentId = containerId;
@@ -465,6 +607,42 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
       }
 
       const nodeId = getNodeId();
+
+      // Build step data for task nodes
+      let stepData: any = undefined;
+      let nodeLabel = `New ${type}`;
+
+      if (type === 'task') {
+        if (taskData) {
+          // Pre-fill with connection task data
+          const { metadata, connectionName } = taskData;
+
+          // Pre-populate inputs with empty values based on metadata
+          const prefilledInputs: Record<string, any> = {};
+          metadata.inputs.forEach((input: any) => {
+            prefilledInputs[input.name] = input.required ? '' : undefined;
+          });
+
+          stepData = {
+            id: nodeId,
+            task: metadata.name,
+            connection: connectionName,
+            inputs: prefilledInputs,
+            outputs: metadata.outputs || [],
+          };
+
+          nodeLabel = metadata.label || metadata.name;
+        } else {
+          // Default empty task
+          stepData = {
+            id: nodeId,
+            task: undefined,
+            inputs: {},
+            outputs: [],
+          };
+        }
+      }
+
       const newNode = {
         id: nodeId,
         type,
@@ -481,19 +659,12 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
           },
         }),
         data: {
-          label: `New ${type}`,
+          label: nodeLabel,
           type,
           ...((position as any).section && { section: (position as any).section }),
           ...((position as any).trackId && { trackId: (position as any).trackId }),
-          // Add default step object for task nodes
-          ...(type === 'task' && {
-            step: {
-              id: nodeId, // Use node ID as default step ID
-              task: undefined,
-              inputs: {},
-              outputs: [],
-            },
-          }),
+          // Add step data for task nodes
+          ...(type === 'task' && stepData && { step: stepData }),
           // Add default tracks for parallel containers
           ...(type === 'parallelContainer' && {
             tracks: [
@@ -540,13 +711,20 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
         onConnect={onConnect}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
-        onInit={(instance) => (reactFlowInstance.current = instance as any)}
+        onInit={(instance) => {
+          reactFlowInstance.current = instance as any;
+          if (externalRef) {
+            externalRef.current = instance as any;
+          }
+        }}
         onDrop={onDrop}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
+        onMoveStart={onMoveStart}
+        onMoveEnd={onMoveEnd}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         connectionMode="loose"
@@ -570,16 +748,17 @@ export default function FlowDesigner({ onNodeCreated }: FlowDesignerProps) {
       >
         <Controls />
         <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
-        <MiniMap />
-        <Panel position="top-left" className="bg-white rounded-lg shadow-lg p-4">
-          <div className="text-sm font-semibold text-gray-700">
-            FlowLang Designer
-          </div>
-          <div className="text-xs text-gray-500 mt-1">
-            Drag and drop nodes to design your workflow
-          </div>
-        </Panel>
+        {isPanning && <MiniMap position="bottom-left" />}
       </ReactFlow>
+
+      {/* Connection validation tooltip */}
+      {connectionTooltip && (
+        <ConnectionTooltip
+          message={connectionTooltip.message}
+          position={connectionTooltip.position}
+          onClose={() => setConnectionTooltip(null)}
+        />
+      )}
     </div>
   );
 }

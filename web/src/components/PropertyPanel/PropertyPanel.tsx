@@ -3,6 +3,9 @@ import TaskNodeProperties from './TaskNodeProperties';
 import ConditionalNodeProperties from './ConditionalNodeProperties';
 import LoopNodeProperties from './LoopNodeProperties';
 import ParallelNodeProperties from './ParallelNodeProperties';
+import SwitchNodeProperties from './SwitchNodeProperties';
+import SubflowNodeProperties from './SubflowNodeProperties';
+import ExitNodeProperties from './ExitNodeProperties';
 
 export default function PropertyPanel() {
   const { selectedNode, nodes, updateNode } = useFlowStore();
@@ -48,8 +51,20 @@ export default function PropertyPanel() {
         <ConditionalNodeProperties node={node} onUpdate={updateNode} />
       )}
 
+      {node.data.type === 'switchContainer' && (
+        <SwitchNodeProperties node={node} onUpdate={updateNode} />
+      )}
+
       {node.data.type === 'parallelContainer' && (
         <ParallelNodeProperties node={node} onUpdate={updateNode} />
+      )}
+
+      {node.data.type === 'subflow' && (
+        <SubflowNodeProperties node={node} onUpdate={updateNode} />
+      )}
+
+      {node.data.type === 'exit' && (
+        <ExitNodeProperties node={node} onUpdate={updateNode} />
       )}
     </div>
   );

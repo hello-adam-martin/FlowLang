@@ -64,13 +64,20 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
       <Handle type="source" position={Position.Right} id="right" className="w-2.5 h-2.5 bg-amber-500 border-2 border-white shadow-sm" />
 
       {/* Header with subtle gradient */}
-      <div className="bg-gradient-to-r from-amber-50 to-amber-100 border-b-2 border-amber-200 px-4 py-3 rounded-t-2xl">
+      <div className="bg-gradient-to-r from-amber-50 to-amber-100 border-b-2 border-amber-200 px-4 py-[15px] rounded-t-2xl">
         <div className="flex items-center gap-2.5">
           <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-sm">
             <span className="text-white text-sm font-bold">?</span>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-semibold text-sm text-gray-900">Conditional</div>
+            <div className="flex items-center gap-2">
+              <div className="font-semibold text-sm text-gray-900">{nodeData.label || 'Conditional'}</div>
+              {nodeData.badge && (
+                <div className="px-2 py-0.5 bg-amber-100 border border-amber-300 rounded text-xs font-mono text-amber-800">
+                  {nodeData.badge}
+                </div>
+              )}
+            </div>
             {nodeData.step?.if ? (
               typeof nodeData.step.if === 'string' ? (
                 // Simple condition
@@ -112,10 +119,10 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Then/Else sections */}
-      <div className="flex p-5 gap-4 flex-1 overflow-visible">
+      <div className="flex p-[15px] gap-4 flex-1 overflow-visible">
         {/* Then section */}
         <div
-          className="flex-1 border-2 border-dashed border-green-300 rounded-xl bg-green-50/40 backdrop-blur-sm p-4 min-h-[120px] min-w-[200px] flex flex-col"
+          className="flex-1 border-2 border-dashed border-green-300 rounded-xl bg-green-50/40 backdrop-blur-sm p-[15px] min-h-[120px] min-w-[200px] flex flex-col"
           onDragOver={onDragOver}
           data-section="then"
           data-dropzone="true"
@@ -134,7 +141,7 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
 
         {/* Else section */}
         <div
-          className="flex-1 border-2 border-dashed border-red-300 rounded-xl bg-red-50/40 backdrop-blur-sm p-4 min-h-[120px] min-w-[200px] flex flex-col"
+          className="flex-1 border-2 border-dashed border-red-300 rounded-xl bg-red-50/40 backdrop-blur-sm p-[15px] min-h-[120px] min-w-[200px] flex flex-col"
           onDragOver={onDragOver}
           data-section="else"
           data-dropzone="true"

@@ -2,14 +2,17 @@ import { useState, useEffect } from 'react';
 import { useFlowStore } from '../../store/flowStore';
 import FlowInputEditor from './FlowInputEditor';
 import FlowOutputEditor from './FlowOutputEditor';
-import type { FlowInput, FlowOutput } from '../../types/flow';
+import TriggerEditor from './TriggerEditor';
+import ConnectionEditor from './ConnectionEditor';
+import OnCancelEditor from './OnCancelEditor';
+import type { FlowInput, FlowOutput, TriggerConfig, ConnectionConfig, Step } from '../../types/flow';
 
 interface FlowSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-type Tab = 'general' | 'inputs' | 'outputs';
+type Tab = 'general' | 'inputs' | 'outputs' | 'triggers' | 'connections' | 'cleanup';
 
 export default function FlowSettingsModal({ isOpen, onClose }: FlowSettingsModalProps) {
   const { flowDefinition, updateFlowDefinition } = useFlowStore();
@@ -20,6 +23,9 @@ export default function FlowSettingsModal({ isOpen, onClose }: FlowSettingsModal
   const [description, setDescription] = useState(flowDefinition.description || '');
   const [inputs, setInputs] = useState<FlowInput[]>(flowDefinition.inputs || []);
   const [outputs, setOutputs] = useState<FlowOutput[]>(flowDefinition.outputs || []);
+  const [triggers, setTriggers] = useState<TriggerConfig[]>(flowDefinition.triggers || []);
+  const [connections, setConnections] = useState<Record<string, ConnectionConfig>>(flowDefinition.connections || {});
+  const [onCancelSteps, setOnCancelSteps] = useState<Step[]>(flowDefinition.on_cancel || []);
 
   // Reset form when modal opens
   useEffect(() => {
@@ -28,6 +34,9 @@ export default function FlowSettingsModal({ isOpen, onClose }: FlowSettingsModal
       setDescription(flowDefinition.description || '');
       setInputs(flowDefinition.inputs || []);
       setOutputs(flowDefinition.outputs || []);
+      setTriggers(flowDefinition.triggers || []);
+      setConnections(flowDefinition.connections || {});
+      setOnCancelSteps(flowDefinition.on_cancel || []);
       setActiveTab('general');
     }
   }, [isOpen, flowDefinition]);
@@ -38,6 +47,9 @@ export default function FlowSettingsModal({ isOpen, onClose }: FlowSettingsModal
       description: description || undefined,
       inputs,
       outputs,
+      triggers: triggers.length > 0 ? triggers : undefined,
+      connections: Object.keys(connections).length > 0 ? connections : undefined,
+      on_cancel: onCancelSteps.length > 0 ? onCancelSteps : undefined,
     });
     onClose();
   };
@@ -111,6 +123,51 @@ export default function FlowSettingsModal({ isOpen, onClose }: FlowSettingsModal
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('triggers')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'triggers'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Triggers
+            {triggers.length > 0 && (
+              <span className="ml-1.5 text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded-full">
+                {triggers.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('connections')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'connections'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Connections
+            {Object.keys(connections).length > 0 && (
+              <span className="ml-1.5 text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded-full">
+                {Object.keys(connections).length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('cleanup')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'cleanup'
+                ? 'border-orange-500 text-orange-600'
+                : 'border-transparent text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Cleanup
+            {onCancelSteps.length > 0 && (
+              <span className="ml-1.5 text-xs bg-orange-200 text-orange-700 px-1.5 py-0.5 rounded-full">
+                {onCancelSteps.length}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Content */}
@@ -160,6 +217,18 @@ export default function FlowSettingsModal({ isOpen, onClose }: FlowSettingsModal
 
           {activeTab === 'outputs' && (
             <FlowOutputEditor outputs={outputs} onChange={setOutputs} />
+          )}
+
+          {activeTab === 'triggers' && (
+            <TriggerEditor triggers={triggers} onChange={setTriggers} />
+          )}
+
+          {activeTab === 'connections' && (
+            <ConnectionEditor connections={connections} onChange={setConnections} />
+          )}
+
+          {activeTab === 'cleanup' && (
+            <OnCancelEditor onCancelSteps={onCancelSteps} onChange={setOnCancelSteps} />
           )}
         </div>
 

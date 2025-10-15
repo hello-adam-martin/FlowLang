@@ -62,13 +62,20 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
       <Handle type="source" position={Position.Right} id="right" className="w-2.5 h-2.5 bg-purple-500 border-2 border-white shadow-sm" />
 
       {/* Header with subtle gradient */}
-      <div className="bg-gradient-to-r from-purple-50 to-purple-100 border-b-2 border-purple-200 px-4 py-3 rounded-t-2xl">
+      <div className="bg-gradient-to-r from-purple-50 to-purple-100 border-b-2 border-purple-200 px-4 py-[15px] rounded-t-2xl">
         <div className="flex items-center gap-2.5">
           <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center shadow-sm">
             <span className="text-white text-sm font-bold">↻</span>
           </div>
           <div className="flex-1">
-            <div className="font-semibold text-sm text-gray-900">Loop</div>
+            <div className="flex items-center gap-2">
+              <div className="font-semibold text-sm text-gray-900">{nodeData.label || 'Loop'}</div>
+              {nodeData.badge && (
+                <div className="px-2 py-0.5 bg-purple-100 border border-purple-300 rounded text-xs font-mono text-purple-800">
+                  {nodeData.badge}
+                </div>
+              )}
+            </div>
             <div className="text-xs text-purple-700">
               {nodeData.step?.for_each ? (
                 <>
@@ -89,7 +96,7 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Droppable body area */}
-      <div className="p-5 flex-1 flex items-center justify-center" data-dropzone="true">
+      <div className="p-[15px] flex-1 flex items-center justify-center" data-dropzone="true">
         {!hasChildren && (
           <div className="text-center text-purple-600">
             <div className="text-sm font-medium mb-1">Drop tasks here</div>

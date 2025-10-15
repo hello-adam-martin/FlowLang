@@ -2,11 +2,17 @@ import { useFlowStore } from '../../store/flowStore';
 import { flowToYaml, yamlToFlow, validateYaml } from '../../services/yamlConverter';
 import { useRef, useState } from 'react';
 import FlowSettingsModal from '../FlowSettings/FlowSettingsModal';
+import YAMLPreviewModal from '../YAMLPreviewModal/YAMLPreviewModal';
 
-export default function FlowToolbar() {
+interface FlowToolbarProps {
+  onShowKeyboardHelp?: () => void;
+}
+
+export default function FlowToolbar({ onShowKeyboardHelp }: FlowToolbarProps) {
   const { flowDefinition, reset, nodes, edges, setNodes, setEdges, setFlowDefinition } = useFlowStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showYAMLModal, setShowYAMLModal] = useState(false);
 
   const handleNew = () => {
     if (confirm('Create new flow? Current progress will be lost.')) {
@@ -98,9 +104,132 @@ export default function FlowToolbar() {
             </svg>
             {flowDefinition.flow}
           </button>
+
+          {/* Trigger Summary */}
+          {flowDefinition.triggers && flowDefinition.triggers.length > 0 && (
+            <div className="flex items-center gap-2">
+              {(() => {
+                const webhookCount = flowDefinition.triggers.filter(t => t.type === 'webhook').length;
+                const scheduleCount = flowDefinition.triggers.filter(t => t.type === 'schedule').length;
+
+                return (
+                  <>
+                    {webhookCount > 0 && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded-md">
+                        <span className="text-blue-600 text-xs font-bold">🌐</span>
+                        <span className="text-xs font-medium text-blue-700">
+                          {webhookCount} webhook{webhookCount !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    )}
+                    {scheduleCount > 0 && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-50 border border-purple-200 rounded-md">
+                        <span className="text-purple-600 text-xs font-bold">⏰</span>
+                        <span className="text-xs font-medium text-purple-700">
+                          {scheduleCount} schedule{scheduleCount !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Connection Summary */}
+          {flowDefinition.connections && Object.keys(flowDefinition.connections).length > 0 && (
+            <div className="flex items-center gap-2">
+              {(() => {
+                const connections = flowDefinition.connections;
+                const postgresCount = Object.values(connections).filter(c => c.type === 'postgres').length;
+                const mysqlCount = Object.values(connections).filter(c => c.type === 'mysql').length;
+                const mongodbCount = Object.values(connections).filter(c => c.type === 'mongodb').length;
+                const redisCount = Object.values(connections).filter(c => c.type === 'redis').length;
+                const sqliteCount = Object.values(connections).filter(c => c.type === 'sqlite').length;
+                const airtableCount = Object.values(connections).filter(c => c.type === 'airtable').length;
+
+                return (
+                  <>
+                    {postgresCount > 0 && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded-md">
+                        <span className="text-blue-600 text-xs font-bold">🗄️</span>
+                        <span className="text-xs font-medium text-blue-700">
+                          {postgresCount} PostgreSQL
+                        </span>
+                      </div>
+                    )}
+                    {mysqlCount > 0 && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-orange-50 border border-orange-200 rounded-md">
+                        <span className="text-orange-600 text-xs font-bold">🗄️</span>
+                        <span className="text-xs font-medium text-orange-700">
+                          {mysqlCount} MySQL
+                        </span>
+                      </div>
+                    )}
+                    {mongodbCount > 0 && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-green-50 border border-green-200 rounded-md">
+                        <span className="text-green-600 text-xs font-bold">📄</span>
+                        <span className="text-xs font-medium text-green-700">
+                          {mongodbCount} MongoDB
+                        </span>
+                      </div>
+                    )}
+                    {redisCount > 0 && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-red-50 border border-red-200 rounded-md">
+                        <span className="text-red-600 text-xs font-bold">🔴</span>
+                        <span className="text-xs font-medium text-red-700">
+                          {redisCount} Redis
+                        </span>
+                      </div>
+                    )}
+                    {sqliteCount > 0 && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-50 border border-purple-200 rounded-md">
+                        <span className="text-purple-600 text-xs font-bold">💾</span>
+                        <span className="text-xs font-medium text-purple-700">
+                          {sqliteCount} SQLite
+                        </span>
+                      </div>
+                    )}
+                    {airtableCount > 0 && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <span className="text-yellow-600 text-xs font-bold">📊</span>
+                        <span className="text-xs font-medium text-yellow-700">
+                          {airtableCount} Airtable
+                        </span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Cleanup Summary */}
+          {flowDefinition.on_cancel && flowDefinition.on_cancel.length > 0 && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-orange-50 border border-orange-200 rounded-md">
+                <span className="text-orange-600 text-xs font-bold">🧹</span>
+                <span className="text-xs font-medium text-orange-700">
+                  {flowDefinition.on_cancel.length} cleanup{flowDefinition.on_cancel.length !== 1 ? ' steps' : ' step'}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
+          {onShowKeyboardHelp && (
+            <button
+              onClick={onShowKeyboardHelp}
+              className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
+              title="Keyboard shortcuts (press ?)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+              </svg>
+              <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-xs font-semibold text-gray-700 bg-gray-100 border border-gray-300 rounded">?</kbd>
+            </button>
+          )}
           <button
             onClick={handleNew}
             className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
@@ -112,6 +241,17 @@ export default function FlowToolbar() {
             className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
           >
             Import YAML
+          </button>
+          <button
+            onClick={() => setShowYAMLModal(true)}
+            className="px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 flex items-center gap-1.5"
+            disabled={nodes.length === 0}
+            title="View complete flow YAML"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+            </svg>
+            View YAML
           </button>
           <button
             onClick={handleExport}
@@ -131,6 +271,14 @@ export default function FlowToolbar() {
 
       {/* Flow Settings Modal */}
       <FlowSettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+      {/* YAML Preview Modal */}
+      <YAMLPreviewModal
+        isOpen={showYAMLModal}
+        onClose={() => setShowYAMLModal(false)}
+        title="Complete Flow YAML"
+        yamlContent={flowToYaml(nodes, edges, flowDefinition)}
+      />
     </div>
   );
 }

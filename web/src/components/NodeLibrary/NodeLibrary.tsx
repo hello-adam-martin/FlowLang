@@ -5,7 +5,13 @@ import type { NodeTemplate, FlowNodeType } from '../../types/node';
 import TaskNode from '../nodes/TaskNode';
 import LoopContainerNode from '../nodes/LoopContainerNode';
 import ConditionalContainerNode from '../nodes/ConditionalContainerNode';
+import SwitchContainerNode from '../nodes/SwitchContainerNode';
 import ParallelContainerNode from '../nodes/ParallelContainerNode';
+import SubflowNode from '../nodes/SubflowNode';
+import ExitNode from '../nodes/ExitNode';
+import ConnectionTaskSection from './ConnectionTaskSection';
+import { useFlowStore } from '../../store/flowStore';
+import type { ConnectionTaskMetadata } from '../../data/connectionTasks';
 
 const nodeTemplates: NodeTemplate[] = [
   {
@@ -27,10 +33,28 @@ const nodeTemplates: NodeTemplate[] = [
     icon: '?',
   },
   {
+    type: 'switchContainer',
+    label: 'Switch Container',
+    description: 'Multi-way branching with cases',
+    icon: '⋮',
+  },
+  {
     type: 'parallelContainer',
     label: 'Parallel Container',
     description: 'Run tasks concurrently',
     icon: '⇉',
+  },
+  {
+    type: 'subflow',
+    label: 'Subflow',
+    description: 'Execute another flow',
+    icon: '⚡',
+  },
+  {
+    type: 'exit',
+    label: 'Exit Flow',
+    description: 'Terminate flow execution',
+    icon: '⏹',
   },
 ];
 
@@ -48,8 +72,8 @@ const createDragPreview = (nodeType: FlowNodeType): HTMLElement => {
   };
 
   // Set fixed dimensions for containers
-  if (nodeType !== 'task') {
-    if (nodeType === 'conditionalContainer') {
+  if (nodeType !== 'task' && nodeType !== 'subflow' && nodeType !== 'exit') {
+    if (nodeType === 'conditionalContainer' || nodeType === 'switchContainer') {
       preview.style.width = '600px';
       preview.style.height = '300px';
     } else {
@@ -78,8 +102,17 @@ const createDragPreview = (nodeType: FlowNodeType): HTMLElement => {
     case 'conditionalContainer':
       nodeComponent = <ConditionalContainerNode {...nodeProps} />;
       break;
+    case 'switchContainer':
+      nodeComponent = <SwitchContainerNode {...nodeProps} />;
+      break;
     case 'parallelContainer':
       nodeComponent = <ParallelContainerNode {...nodeProps} />;
+      break;
+    case 'subflow':
+      nodeComponent = <SubflowNode {...nodeProps} />;
+      break;
+    case 'exit':
+      nodeComponent = <ExitNode {...nodeProps} />;
       break;
   }
 
@@ -97,6 +130,7 @@ const createDragPreview = (nodeType: FlowNodeType): HTMLElement => {
 export default function NodeLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
   const dragPreviewRef = useRef<HTMLElement | null>(null);
+  const { flowDefinition } = useFlowStore();
 
   useEffect(() => {
     // Cleanup on unmount
@@ -135,6 +169,12 @@ export default function NodeLibrary() {
     }
   };
 
+  const handleTaskDragStart = (task: ConnectionTaskMetadata, connectionName: string) => {
+    // Task drag data is already set in ConnectionTaskSection
+    // This handler can be used for additional logic if needed
+    console.log('Dragging task:', task.name, 'from connection:', connectionName);
+  };
+
   const filteredTemplates = nodeTemplates.filter(
     (template) =>
       template.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -169,6 +209,7 @@ export default function NodeLibrary() {
         </div>
       </div>
 
+      {/* Standard Node Templates */}
       <div className="space-y-2">
         {filteredTemplates.map((template) => (
           <div
@@ -194,6 +235,24 @@ export default function NodeLibrary() {
           </div>
         ))}
       </div>
+
+      {/* Connection Task Sections */}
+      {flowDefinition.connections && Object.keys(flowDefinition.connections).length > 0 && (
+        <div className="mt-6 space-y-2">
+          <div className="px-2 py-1">
+            <h3 className="text-sm font-semibold text-gray-700">Built-in Tasks</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Tasks from configured connections</p>
+          </div>
+          {Object.entries(flowDefinition.connections).map(([name, config]) => (
+            <ConnectionTaskSection
+              key={name}
+              connectionName={name}
+              connectionConfig={config}
+              onTaskDragStart={handleTaskDragStart}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="mt-6 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
         <p className="text-xs text-blue-800 font-semibold">

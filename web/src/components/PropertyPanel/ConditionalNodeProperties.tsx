@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import type { FlowNode } from '../../types/node';
 import type { Step } from '../../types/flow';
 import VariableSelector from './VariableSelector';
+import YAMLPreviewModal from '../YAMLPreviewModal/YAMLPreviewModal';
+import { nodeToYaml } from '../../services/yamlConverter';
 
 interface ConditionalNodePropertiesProps {
   node: FlowNode;
@@ -14,6 +16,7 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
   const step = node.data.step || {};
 
   const [label, setLabel] = useState(node.data.label || '');
+  const [badge, setBadge] = useState(node.data.badge || '');
 
   // Determine condition type and value
   const [conditionType, setConditionType] = useState<ConditionType>(() => {
@@ -38,10 +41,13 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
     return [''];
   });
 
+  const [showYAMLModal, setShowYAMLModal] = useState(false);
+
   // Sync state when node changes
   useEffect(() => {
     const newStep = node.data.step || {};
     setLabel(node.data.label || '');
+    setBadge(node.data.badge || '');
 
     if (typeof newStep.if === 'string') {
       setConditionType('simple');
@@ -84,9 +90,10 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
 
     onUpdate(node.id, {
       label,
+      badge: badge || undefined,
       step: updatedStep,
     });
-  }, [label, conditionType, simpleCondition, quantifiedConditions]);
+  }, [label, badge, conditionType, simpleCondition, quantifiedConditions]);
 
   const handleAddCondition = () => {
     setQuantifiedConditions([...quantifiedConditions, '']);
@@ -123,6 +130,23 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
           className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
           placeholder="Enter node label"
         />
+      </div>
+
+      {/* Badge (Count/Variable) */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Badge
+        </label>
+        <VariableSelector
+          value={badge}
+          onChange={setBadge}
+          placeholder="${previous_step.count}"
+          currentNodeId={node.id}
+          className="font-mono"
+        />
+        <p className="mt-1 text-xs text-gray-500">
+          Optional badge to display next to the label (e.g., item count, status)
+        </p>
       </div>
 
       {/* Condition Type Selector */}
@@ -252,12 +276,33 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
         </div>
       </div>
 
+      {/* View YAML Button */}
+      <div>
+        <button
+          onClick={() => setShowYAMLModal(true)}
+          className="w-full px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+          </svg>
+          View Node YAML
+        </button>
+      </div>
+
       {/* Info about child nodes */}
       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
         <p className="text-xs text-blue-800">
           Drag task nodes into the "Then" or "Else" sections of this container to define what happens when the condition is true or false.
         </p>
       </div>
+
+      {/* YAML Preview Modal */}
+      <YAMLPreviewModal
+        isOpen={showYAMLModal}
+        onClose={() => setShowYAMLModal(false)}
+        title="Conditional Container YAML"
+        yamlContent={nodeToYaml(node)}
+      />
     </div>
   );
 }

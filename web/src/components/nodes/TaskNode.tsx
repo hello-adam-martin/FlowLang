@@ -2,11 +2,44 @@ import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { FlowNodeData } from '../../types/node';
 import { useFlowStore } from '../../store/flowStore';
+import type { ConnectionType } from '../../types/flow';
+
+// Connection icons and colors
+const CONNECTION_ICONS: Record<ConnectionType, string> = {
+  postgres: '🗄️',
+  mysql: '🗄️',
+  mongodb: '📄',
+  redis: '🔴',
+  sqlite: '💾',
+  airtable: '📊',
+};
+
+const CONNECTION_COLORS: Record<ConnectionType, { from: string; to: string; bg: string }> = {
+  postgres: { from: 'from-blue-400', to: 'to-blue-600', bg: 'bg-blue-50' },
+  mysql: { from: 'from-orange-400', to: 'to-orange-600', bg: 'bg-orange-50' },
+  mongodb: { from: 'from-green-400', to: 'to-green-600', bg: 'bg-green-50' },
+  redis: { from: 'from-red-400', to: 'to-red-600', bg: 'bg-red-50' },
+  sqlite: { from: 'from-purple-400', to: 'to-purple-600', bg: 'bg-purple-50' },
+  airtable: { from: 'from-yellow-400', to: 'to-yellow-600', bg: 'bg-yellow-50' },
+};
 
 function TaskNode({ data, selected, id }: NodeProps) {
   const nodeData = data as FlowNodeData;
   const hasErrors = nodeData.errors && nodeData.errors.length > 0;
   const removeNode = useFlowStore((state) => state.removeNode);
+  const flowDefinition = useFlowStore((state) => state.flowDefinition);
+
+  // Get connection type if this task has a connection
+  const connectionName = nodeData.step?.connection;
+  const connectionType = connectionName && flowDefinition.connections?.[connectionName]
+    ? flowDefinition.connections[connectionName].type
+    : null;
+
+  // Get icon and colors based on connection type
+  const icon = connectionType ? CONNECTION_ICONS[connectionType] : 'T';
+  const colors = connectionType
+    ? CONNECTION_COLORS[connectionType]
+    : { from: 'from-blue-400', to: 'to-blue-600', bg: 'bg-white' };
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -15,7 +48,9 @@ function TaskNode({ data, selected, id }: NodeProps) {
 
   return (
     <div
-      className={`px-3 py-2 rounded-xl border bg-white min-w-[140px] transition-all relative group ${
+      className={`px-3 py-2 rounded-xl border min-w-[140px] transition-all relative group ${
+        connectionType ? colors.bg : 'bg-white'
+      } ${
         selected
           ? 'border-blue-500 shadow-lg ring-2 ring-blue-200'
           : hasErrors
@@ -66,8 +101,8 @@ function TaskNode({ data, selected, id }: NodeProps) {
       />
 
       <div className="flex items-center gap-2">
-        <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-sm">
-          <span className="text-white text-xs font-bold">T</span>
+        <div className={`flex-shrink-0 w-7 h-7 rounded-lg bg-gradient-to-br ${colors.from} ${colors.to} flex items-center justify-center shadow-sm`}>
+          <span className="text-white text-xs font-bold">{icon}</span>
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-xs font-medium text-gray-900 truncate">
@@ -76,6 +111,11 @@ function TaskNode({ data, selected, id }: NodeProps) {
           {nodeData.step?.task && (
             <div className="text-[10px] text-gray-600 font-mono truncate">
               {nodeData.step.task}
+            </div>
+          )}
+          {connectionName && (
+            <div className="text-[10px] text-gray-500 truncate mt-0.5">
+              📌 {connectionName}
             </div>
           )}
         </div>

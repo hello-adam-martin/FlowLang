@@ -37,9 +37,23 @@ const initialFlowDefinition: FlowDefinition = {
   outputs: [],
 };
 
+const initialNodes: Node<FlowNodeData>[] = [
+  {
+    id: 'start',
+    type: 'start',
+    position: { x: 250, y: 100 },
+    data: {
+      label: 'Start',
+      type: 'start',
+    },
+    deletable: false, // Start node cannot be deleted
+    draggable: true,
+  },
+];
+
 export const useFlowStore = create<FlowStore>((set, get) => ({
   // Initial state
-  nodes: [],
+  nodes: initialNodes,
   edges: [],
   flowDefinition: initialFlowDefinition,
   selectedNode: null,
@@ -119,7 +133,7 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
   // Reset
   reset: () => {
     set({
-      nodes: [],
+      nodes: initialNodes,
       edges: [],
       flowDefinition: initialFlowDefinition,
       selectedNode: null,

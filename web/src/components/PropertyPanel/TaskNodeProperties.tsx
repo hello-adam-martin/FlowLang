@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import type { FlowNode } from '../../types/node';
 import type { Step } from '../../types/flow';
 import KeyValueEditor from './KeyValueEditor';
+import YAMLPreviewModal from '../YAMLPreviewModal/YAMLPreviewModal';
+import { nodeToYaml } from '../../services/yamlConverter';
 
 interface TaskNodePropertiesProps {
   node: FlowNode;
@@ -17,6 +19,7 @@ export default function TaskNodeProperties({ node, onUpdate }: TaskNodePropertie
   const [description, setDescription] = useState(step.description || '');
   const [inputs, setInputs] = useState(step.inputs || {});
   const [outputs, setOutputs] = useState((step.outputs || []).join(', '));
+  const [showYAMLModal, setShowYAMLModal] = useState(false);
 
   // Sync state when node changes (when user selects a different node)
   useEffect(() => {
@@ -145,6 +148,27 @@ export default function TaskNodeProperties({ node, onUpdate }: TaskNodePropertie
           {node.id}
         </div>
       </div>
+
+      {/* View YAML Button */}
+      <div>
+        <button
+          onClick={() => setShowYAMLModal(true)}
+          className="w-full px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+          </svg>
+          View Node YAML
+        </button>
+      </div>
+
+      {/* YAML Preview Modal */}
+      <YAMLPreviewModal
+        isOpen={showYAMLModal}
+        onClose={() => setShowYAMLModal(false)}
+        title="Task Node YAML"
+        yamlContent={nodeToYaml(node)}
+      />
     </div>
   );
 }
