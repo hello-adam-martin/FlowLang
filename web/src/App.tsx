@@ -5,7 +5,7 @@ import PropertyPanel from './components/PropertyPanel/PropertyPanel';
 import FlowToolbar from './components/FlowToolbar/FlowToolbar';
 import FlowManager from './components/FlowManager/FlowManager';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp/KeyboardShortcutsHelp';
-import { useFlowStore } from './store/flowStore';
+import { useFlowStore, initialExecutionState } from './store/flowStore';
 import { useProjectStore } from './store/projectStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import type { FlowNodeType } from './types/node';
@@ -17,7 +17,7 @@ function App() {
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [showFlowManager, setShowFlowManager] = useState(false);
   const selectedNode = useFlowStore((state) => state.selectedNode);
-  const { nodes, edges, flowDefinition, addNode, onConnect, setNodes, setEdges, setFlowDefinition } = useFlowStore();
+  const { nodes, edges, flowDefinition, addNode, onConnect, setNodes, setEdges, setFlowDefinition, setExecution } = useFlowStore();
   const { project, getCurrentFlow, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition, loadFromStorage } = useProjectStore();
   const reactFlowInstanceRef = useRef<any>(null);
 
@@ -33,8 +33,10 @@ function App() {
       setNodes(currentFlow.nodes);
       setEdges(currentFlow.edges);
       setFlowDefinition(currentFlow.flowDefinition);
+      // Restore execution state if it exists, otherwise reset to idle
+      setExecution(currentFlow.execution || initialExecutionState);
     }
-  }, [project.currentFlowId, getCurrentFlow, setNodes, setEdges, setFlowDefinition]);
+  }, [project.currentFlowId, getCurrentFlow, setNodes, setEdges, setFlowDefinition, setExecution]);
 
   // Sync changes from flowStore back to projectStore (debounced)
   useEffect(() => {

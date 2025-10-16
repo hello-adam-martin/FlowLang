@@ -45,6 +45,7 @@ interface FlowStore {
   setEdges: (edges: Edge[]) => void;
   setFlowDefinition: (definition: FlowDefinition) => void;
   setSelectedNode: (nodeId: string | null) => void;
+  setExecution: (execution: ExecutionState) => void;
 
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -93,7 +94,7 @@ const initialNodes: Node<FlowNodeData>[] = [
   },
 ];
 
-const initialExecutionState: ExecutionState = {
+export const initialExecutionState: ExecutionState = {
   status: 'idle',
   stepMode: false,
   currentNodeId: null,
@@ -117,6 +118,7 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
   setEdges: (edges) => set({ edges }),
   setFlowDefinition: (flowDefinition) => set({ flowDefinition }),
   setSelectedNode: (selectedNode) => set({ selectedNode }),
+  setExecution: (execution) => set({ execution }),
 
   // ReactFlow change handlers
   onNodesChange: (changes) => {
