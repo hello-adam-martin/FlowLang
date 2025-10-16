@@ -272,7 +272,7 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
           <div className="relative">
             <button
               onClick={() => setShowYAMLMenu(!showYAMLMenu)}
-              className="px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 flex items-center gap-2 transition-colors"
+              className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={nodes.length === 0}
               title="YAML Actions"
             >
