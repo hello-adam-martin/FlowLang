@@ -464,23 +464,21 @@ export default function HistoryFlowViewer({ execution, nodes, edges }: HistoryFl
         </div>
       )}
 
-      {/* Replay Controls and Results Button */}
-      {executionTimeline.length > 0 && (
-        <div className="absolute top-4 right-4 flex items-start gap-3 z-20">
-          {/* Results Button */}
-          <button
-            onClick={() => setShowResultsModal(true)}
-            className="bg-white rounded-lg shadow-xl border border-gray-200 px-4 py-2 hover:bg-gray-50 transition-colors flex items-center gap-2"
-            title="View execution results"
-          >
-            <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <span className="text-sm font-medium text-gray-700">Results</span>
-          </button>
+      {/* Results Button - Top Left */}
+      <button
+        onClick={() => setShowResultsModal(true)}
+        className="absolute top-4 left-4 bg-white rounded-lg shadow-xl border border-gray-200 px-4 py-2 hover:bg-gray-50 transition-colors flex items-center gap-2 z-20"
+        title="View execution results"
+      >
+        <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <span className="text-sm font-medium text-gray-700">Results</span>
+      </button>
 
-          {/* Replay Controls */}
-          <div className="bg-white rounded-lg shadow-xl border border-gray-200 p-3">
+      {/* Replay Controls */}
+      {executionTimeline.length > 0 && (
+        <div className="absolute top-4 right-4 bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-20">
           <div className="flex items-center gap-3">
             {/* Play/Pause Button */}
             <button
@@ -541,7 +539,6 @@ export default function HistoryFlowViewer({ execution, nodes, edges }: HistoryFl
             >
               {replaySpeed}x
             </button>
-          </div>
           </div>
         </div>
       )}
