@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useProjectStore } from '../../store/projectStore';
 import FlowList from './FlowList';
 import NewFlowModal from './NewFlowModal';
@@ -67,6 +67,14 @@ export default function FlowManager({ isOpen, onClose }: FlowManagerProps) {
       setIsEditingProjectName(false);
     }
   };
+
+  // Automatically show new flow modal when there are no flows
+  useEffect(() => {
+    const flowCount = Object.keys(project.flows).length;
+    if (flowCount === 0 && isOpen) {
+      setShowNewFlowModal(true);
+    }
+  }, [project.flows, isOpen]);
 
   if (!isOpen) return null;
 

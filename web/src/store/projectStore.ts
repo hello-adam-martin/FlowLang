@@ -186,13 +186,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   deleteFlow: (flowId) => {
     const state = get();
-    const flowIds = Object.keys(state.project.flows);
-
-    // Don't allow deleting the last flow
-    if (flowIds.length <= 1) {
-      return;
-    }
-
     const { [flowId]: deleted, ...remainingFlows } = state.project.flows;
 
     // If deleting current flow, switch to another
