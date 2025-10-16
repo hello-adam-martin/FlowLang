@@ -95,7 +95,7 @@ export default function FlowListItem({
           <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
             <span>{nodeCount} nodes</span>
             <span>•</span>
-            <span>{edgeCount} edges</span>
+            <span>{edgeCount} connections</span>
           </div>
 
           {/* Modified time */}
