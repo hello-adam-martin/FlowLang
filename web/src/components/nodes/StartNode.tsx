@@ -68,7 +68,7 @@ const StartNode = memo(({ id, data, selected }: NodeProps<FlowNodeData>) => {
   return (
     <>
       <div
-        className={`rounded-xl border transition-all shadow-sm bg-white overflow-hidden flex flex-col ${
+        className={`rounded-xl border transition-all shadow-sm bg-white flex flex-col ${
           selected ? 'border-blue-500 ring-2 ring-blue-300 shadow-md' : 'border-gray-200'
         }`}
         style={{
@@ -121,7 +121,7 @@ const StartNode = memo(({ id, data, selected }: NodeProps<FlowNodeData>) => {
         <button
           onClick={handleSimulate}
           disabled={buttonState.disabled}
-          className={`w-full px-3 py-2 text-white font-medium text-xs flex items-center justify-center gap-2 transition-all border-t border-gray-200 flex-shrink-0 rounded-b-xl ${buttonState.bgColor} ${buttonState.hoverColor} disabled:opacity-70 disabled:cursor-not-allowed`}
+          className={`w-full px-3 py-2.5 text-white font-medium text-xs flex items-center justify-center gap-2 transition-all border-t border-gray-200 flex-shrink-0 rounded-b-[11px] ${buttonState.bgColor} ${buttonState.hoverColor} disabled:opacity-70 disabled:cursor-not-allowed`}
         >
           <span className="text-sm">{buttonState.icon}</span>
           <span>{buttonState.label}</span>
