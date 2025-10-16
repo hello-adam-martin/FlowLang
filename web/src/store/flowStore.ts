@@ -169,6 +169,7 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
     set({
       nodes: get().nodes.filter((n) => n.id !== nodeId),
       edges: get().edges.filter((e) => e.source !== nodeId && e.target !== nodeId),
+      selectedNode: get().selectedNode === nodeId ? null : get().selectedNode,
     });
   },
 
