@@ -15,7 +15,7 @@ import './index.css';
 function App() {
   const [showNodeLibrary, setShowNodeLibrary] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
-  const [showFlowManager, setShowFlowManager] = useState(false);
+  const [showFlowManager, setShowFlowManager] = useState(true);
   const selectedNode = useFlowStore((state) => state.selectedNode);
   const { nodes, edges, flowDefinition, addNode, onConnect, setNodes, setEdges, setFlowDefinition, setExecution } = useFlowStore();
   const { project, getCurrentFlow, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition, loadFromStorage } = useProjectStore();
