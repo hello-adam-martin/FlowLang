@@ -42,6 +42,7 @@ export interface FlowNodeData extends Record<string, unknown> {
   tracks?: ParallelTrack[]; // For parallel containers - explicit track definitions
   trackId?: string;        // For tasks inside parallel containers - which track they belong to
   cases?: SwitchCase[];    // For switch containers - case definitions
+  loopExecutionOrder?: number; // For tasks inside loop containers - execution order (1, 2, 3, ...)
 }
 
 // Extended ReactFlow node with our custom data

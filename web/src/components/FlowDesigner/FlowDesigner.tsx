@@ -60,7 +60,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
   const {
     nodes,
     edges,
-    onNodesChange,
+    onNodesChange: storeOnNodesChange,
     onEdgesChange,
     onConnect,
     setSelectedNode,
@@ -340,6 +340,83 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
     [draggingNodeId, dragOverContainerId]
   );
 
+  // Helper function to constrain node position within container with padding
+  const constrainPositionWithinContainer = useCallback(
+    (position: { x: number; y: number }, containerNode: any, nodeWidth: number = 200, nodeHeight: number = 80) => {
+      // Container-specific padding (15px to match grid)
+      const padding = 15;
+
+      // Get container dimensions
+      const containerElement = document.querySelector(`[data-id="${containerNode.id}"]`);
+      let containerWidth = containerNode.width || containerNode.style?.width || 250;
+      let containerHeight = containerNode.height || containerNode.style?.height || 150;
+
+      // For loop containers, we need to account for the header height
+      let availableTop = padding;
+      if (containerNode.type === 'loopContainer') {
+        const headerHeight = 60; // Header height from LoopContainerNode
+        availableTop = headerHeight + padding;
+      } else if (containerNode.type === 'conditionalContainer' || containerNode.type === 'switchContainer') {
+        const headerHeight = 60;
+        availableTop = headerHeight + padding;
+      } else if (containerNode.type === 'parallelContainer') {
+        const headerHeight = 60;
+        availableTop = headerHeight + padding;
+      }
+
+      // Calculate constrained position
+      const constrainedX = Math.max(padding, Math.min(position.x, containerWidth - nodeWidth - padding));
+      const constrainedY = Math.max(availableTop, Math.min(position.y, containerHeight - nodeHeight - padding));
+
+      return { x: constrainedX, y: constrainedY };
+    },
+    []
+  );
+
+  // Wrapper for onNodesChange that applies padding constraints to child nodes
+  const onNodesChange = useCallback(
+    (changes: any[]) => {
+      // Process position changes to apply padding constraints
+      const constrainedChanges = changes.map(change => {
+        // Only process position changes for nodes with a parent
+        if (change.type === 'position' && change.position && change.dragging) {
+          const node = nodes.find(n => n.id === change.id);
+          if (node?.parentId) {
+            const parentNode = nodes.find(n => n.id === node.parentId);
+            if (parentNode && (
+              parentNode.type === 'loopContainer' ||
+              parentNode.type === 'conditionalContainer' ||
+              parentNode.type === 'switchContainer' ||
+              parentNode.type === 'parallelContainer'
+            )) {
+              // Get node dimensions
+              const nodeElement = document.querySelector(`[data-id="${node.id}"]`);
+              const nodeWidth = nodeElement?.getBoundingClientRect().width || 200;
+              const nodeHeight = nodeElement?.getBoundingClientRect().height || 80;
+
+              // Apply constraints
+              const constrainedPosition = constrainPositionWithinContainer(
+                change.position,
+                parentNode,
+                nodeWidth,
+                nodeHeight
+              );
+
+              return {
+                ...change,
+                position: constrainedPosition,
+              };
+            }
+          }
+        }
+        return change;
+      });
+
+      storeOnNodesChange(constrainedChanges);
+    },
+    [nodes, storeOnNodesChange, constrainPositionWithinContainer]
+  );
+
   const onNodeDragStop = useCallback(
     (_event: React.MouseEvent, node: any) => {
       setDraggingNodeId(null);
@@ -377,10 +454,18 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
             if (node.parentId === containerId) return;
 
             // Calculate position relative to container
-            const relativePosition = {
+            let relativePosition = {
               x: node.position.x - containerNode.position.x,
               y: node.position.y - containerNode.position.y,
             };
+
+            // Constrain position within container with padding
+            relativePosition = constrainPositionWithinContainer(
+              relativePosition,
+              containerNode,
+              nodeRect.width,
+              nodeRect.height
+            );
 
             // Update the node to make it a child of the container
             onNodesChange([
@@ -402,7 +487,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
         }
       }
     },
-    [onNodesChange]
+    [onNodesChange, constrainPositionWithinContainer]
   );
 
   // Add invalid class to nodes that cannot be connected to, and drag-over class to containers
@@ -537,6 +622,16 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
             x: position.x - containerNodeData.position.x,
             y: position.y - containerNodeData.position.y,
           };
+
+          // Constrain position within container with padding (unless it's a parallel container with track assignment)
+          if (containerNodeData.type !== 'parallelContainer') {
+            relativePosition = constrainPositionWithinContainer(
+              relativePosition,
+              containerNodeData,
+              nodeWidth,
+              nodeHeight
+            );
+          }
 
           // For parallel containers, detect which track ghost is being hovered and assign trackId
           if (containerNodeData.type === 'parallelContainer' && type === 'task') {
@@ -695,7 +790,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
       // Close the node library panel
       onNodeCreated?.();
     },
-    [addNode, nodes, onConnect, setSelectedNode, onNodeCreated]
+    [addNode, nodes, onConnect, setSelectedNode, onNodeCreated, constrainPositionWithinContainer]
   );
 
   // Add selected styling to edges

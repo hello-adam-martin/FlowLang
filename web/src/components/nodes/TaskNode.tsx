@@ -3,7 +3,6 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { FlowNodeData } from '../../types/node';
 import { useFlowStore } from '../../store/flowStore';
 import type { ConnectionType } from '../../types/flow';
-import QuickConnectHandle from '../handles/QuickConnectHandle';
 
 // Connection icons and colors
 const CONNECTION_ICONS: Record<ConnectionType, string> = {
@@ -119,6 +118,16 @@ function TaskNode({ data, selected, id }: NodeProps) {
           />
         </div>
       )}
+      {/* Loop execution order badge - shows when node is inside a loop */}
+      {nodeData.loopExecutionOrder && (
+        <div
+          className="absolute -top-1.5 -left-1.5 w-5 h-5 bg-gray-300 text-white rounded-full flex items-center justify-center shadow-sm z-10 text-[10px] font-bold"
+          title={`Loop execution order: ${nodeData.loopExecutionOrder}`}
+        >
+          {nodeData.loopExecutionOrder}
+        </div>
+      )}
+
       {/* Delete button - shows on hover */}
       <button
         onClick={handleDelete}
@@ -138,11 +147,12 @@ function TaskNode({ data, selected, id }: NodeProps) {
         className="!w-3 !h-3 !border-2 !border-white !bg-gray-300 !rounded-sm hover:!bg-gray-400 transition-all"
       />
 
-      {/* Output handle (right side) with quick connect */}
-      <QuickConnectHandle
-        nodeId={id}
+      {/* Output handle (right side) - circle shape */}
+      <Handle
+        type="source"
         position={Position.Right}
         id="output"
+        className="!w-3 !h-3 !border-2 !border-white !bg-gray-300 !rounded-full hover:!bg-gray-400 transition-all"
       />
 
       <div className="flex items-center gap-2 relative z-10">

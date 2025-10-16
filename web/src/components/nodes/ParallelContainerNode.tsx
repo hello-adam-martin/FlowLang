@@ -86,7 +86,7 @@ function ParallelContainerNode({ selected, id, data }: NodeProps) {
   return (
     <>
       <NodeResizer
-        color="#22c55e"
+        color="#9ca3af"
         isVisible={selected}
         minWidth={450}
         minHeight={150}
@@ -94,10 +94,10 @@ function ParallelContainerNode({ selected, id, data }: NodeProps) {
       />
       <div
         ref={containerRef}
-        className={`relative bg-white/90 rounded-2xl border-2 transition-all ${
+        className={`relative bg-white/90 rounded-2xl border-2 transition-all group ${
           selected
-            ? 'border-green-400 shadow-xl ring-2 ring-green-200'
-            : 'border-green-200 shadow-lg hover:shadow-xl hover:border-green-300'
+            ? 'border-gray-400 shadow-xl ring-2 ring-gray-200'
+            : 'border-gray-200 shadow-lg hover:shadow-xl hover:border-gray-300'
         } w-full h-full`}
         onDragOver={onDragOver}
       >
@@ -112,32 +112,32 @@ function ParallelContainerNode({ selected, id, data }: NodeProps) {
         </svg>
       </button>
 
-      {/* Handles - left (input) and right (output) only */}
-      <Handle type="source" position={Position.Left} id="left" className="w-2.5 h-2.5 bg-green-500 border-2 border-white shadow-sm" />
-      <Handle type="source" position={Position.Right} id="right" className="w-2.5 h-2.5 bg-green-500 border-2 border-white shadow-sm" />
+      {/* Handles - left (input square) and right (output circle) like task node */}
+      <Handle type="target" position={Position.Left} id="left" className="!w-3 !h-3 !border-2 !border-white !bg-gray-300 !rounded-sm hover:!bg-gray-400 transition-all" />
+      <Handle type="source" position={Position.Right} id="right" className="!w-3 !h-3 !border-2 !border-white !bg-gray-300 !rounded-full hover:!bg-gray-400 transition-all" />
 
       {/* Header with subtle gradient */}
-      <div className="bg-gradient-to-r from-green-50 to-green-100 border-b-2 border-green-200 px-4 py-[15px] rounded-t-2xl">
+      <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200 px-4 py-[15px] rounded-t-2xl relative">
+        {/* Badge - positioned absolute in top right */}
+        {nodeData.badge && (
+          <div className="absolute top-2 right-2 px-2 py-0.5 bg-gray-100 border border-gray-300 rounded text-xs font-mono text-gray-800">
+            {nodeData.badge}
+          </div>
+        )}
+
         <div className="flex items-center gap-2.5">
-          <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-sm">
+          <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-gray-400 to-gray-600 flex items-center justify-center shadow-sm">
             <span className="text-white text-sm font-bold">⇉</span>
           </div>
           <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <div className="font-semibold text-sm text-gray-900">{nodeData.label || 'Parallel Execution'}</div>
-              {nodeData.badge && (
-                <div className="px-2 py-0.5 bg-green-100 border border-green-300 rounded text-xs font-mono text-green-800">
-                  {nodeData.badge}
-                </div>
-              )}
-            </div>
-            <div className="text-xs text-green-700">
+            <div className="font-semibold text-sm text-gray-900">{nodeData.label || 'Parallel Execution'}</div>
+            <div className="text-xs text-gray-700">
               {trackCount > 0 ? `${trackCount} parallel track${trackCount !== 1 ? 's' : ''}` : 'All tasks execute concurrently'}
             </div>
           </div>
           <button
             onClick={handleAddTrack}
-            className="flex-shrink-0 w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded flex items-center justify-center shadow-sm transition-all"
+            className="flex-shrink-0 w-6 h-6 bg-gray-500 hover:bg-gray-600 text-white rounded flex items-center justify-center shadow-sm transition-all"
             title="Add new track"
           >
             <span className="text-sm font-bold">+</span>
@@ -162,15 +162,15 @@ function ParallelContainerNode({ selected, id, data }: NodeProps) {
               data-track-id={track.id}
             >
               {/* Track background lane */}
-              <div className="mx-[15px] h-[40px] rounded-xl border-2 border-dashed border-green-300 bg-green-50/10 flex items-start justify-between px-2 py-1 relative group">
+              <div className="mx-[15px] h-[40px] rounded-xl border-2 border-dashed border-gray-300 bg-gray-50/10 flex items-start justify-between px-2 py-1 relative group">
                 {/* Track label badge - positioned absolute to not block */}
-                <div className="absolute top-1 left-2 text-[10px] font-semibold text-green-700 bg-green-100/80 px-1.5 py-0.5 rounded z-10">
+                <div className="absolute top-1 left-2 text-[10px] font-semibold text-gray-700 bg-gray-100/80 px-1.5 py-0.5 rounded z-10">
                   Track {index + 1}
                 </div>
 
                 {/* Empty state hint - only when no task assigned */}
                 {!trackHasTask && (
-                  <div className="flex items-center justify-center w-full h-full text-green-500 text-xs pointer-events-none">
+                  <div className="flex items-center justify-center w-full h-full text-gray-400 text-xs pointer-events-none">
                     Drop task here
                   </div>
                 )}

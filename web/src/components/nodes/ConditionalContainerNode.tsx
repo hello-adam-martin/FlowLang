@@ -33,17 +33,17 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
   return (
     <>
       <NodeResizer
-        color="#f59e0b"
+        color="#9ca3af"
         isVisible={selected}
         minWidth={600}
         minHeight={300}
         keepAspectRatio={false}
       />
       <div
-        className={`relative bg-white/90 rounded-2xl border-2 transition-all ${
+        className={`relative bg-white/90 rounded-2xl border-2 transition-all group ${
           selected
-            ? 'border-amber-400 shadow-xl ring-2 ring-amber-200'
-            : 'border-amber-200 shadow-lg hover:shadow-xl hover:border-amber-300'
+            ? 'border-gray-400 shadow-xl ring-2 ring-gray-200'
+            : 'border-gray-200 shadow-lg hover:shadow-xl hover:border-gray-300'
         } w-full h-full flex flex-col`}
       >
       {/* Delete button - shows on hover */}
@@ -57,29 +57,29 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
         </svg>
       </button>
 
-      {/* Handles - left (input) and right (output) only */}
-      <Handle type="source" position={Position.Left} id="left" className="w-2.5 h-2.5 bg-amber-500 border-2 border-white shadow-sm" />
-      <Handle type="source" position={Position.Right} id="right" className="w-2.5 h-2.5 bg-amber-500 border-2 border-white shadow-sm" />
+      {/* Handles - left (input square) and right (output circle) like task node */}
+      <Handle type="target" position={Position.Left} id="left" className="!w-3 !h-3 !border-2 !border-white !bg-gray-300 !rounded-sm hover:!bg-gray-400 transition-all" />
+      <Handle type="source" position={Position.Right} id="right" className="!w-3 !h-3 !border-2 !border-white !bg-gray-300 !rounded-full hover:!bg-gray-400 transition-all" />
 
       {/* Header with subtle gradient */}
-      <div className="bg-gradient-to-r from-amber-50 to-amber-100 border-b-2 border-amber-200 px-4 py-[15px] rounded-t-2xl">
+      <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200 px-4 py-[15px] rounded-t-2xl relative">
+        {/* Badge - positioned absolute in top right */}
+        {nodeData.badge && (
+          <div className="absolute top-2 right-2 px-2 py-0.5 bg-gray-100 border border-gray-300 rounded text-xs font-mono text-gray-800">
+            {nodeData.badge}
+          </div>
+        )}
+
         <div className="flex items-center gap-2.5">
-          <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-sm">
+          <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-gray-400 to-gray-600 flex items-center justify-center shadow-sm">
             <span className="text-white text-sm font-bold">?</span>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="font-semibold text-sm text-gray-900">{nodeData.label || 'Conditional'}</div>
-              {nodeData.badge && (
-                <div className="px-2 py-0.5 bg-amber-100 border border-amber-300 rounded text-xs font-mono text-amber-800">
-                  {nodeData.badge}
-                </div>
-              )}
-            </div>
+            <div className="font-semibold text-sm text-gray-900">{nodeData.label || 'Conditional'}</div>
             {nodeData.step?.if ? (
               typeof nodeData.step.if === 'string' ? (
                 // Simple condition
-                <div className="text-xs text-amber-700 font-mono truncate" title={nodeData.step.if}>
+                <div className="text-xs text-gray-700 font-mono truncate" title={nodeData.step.if}>
                   {nodeData.step.if}
                 </div>
               ) : (
@@ -96,7 +96,7 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
                   }[type];
 
                   return (
-                    <div className="text-xs text-amber-800 mt-1">
+                    <div className="text-xs text-gray-800 mt-1">
                       <div className="font-semibold mb-0.5">{typeLabel}</div>
                       <ul className="space-y-0.5 ml-2">
                         {conditions.map((condition, idx) => (

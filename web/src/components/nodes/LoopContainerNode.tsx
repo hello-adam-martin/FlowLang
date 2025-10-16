@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState, useRef } from 'react';
+import { memo, useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps, useReactFlow } from '@xyflow/react';
 import type { FlowNodeData } from '../../types/node';
 import { useFlowStore } from '../../store/flowStore';
@@ -7,7 +7,9 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
   const nodeData = data as FlowNodeData;
   const { getNodes, getNode, setNodes } = useReactFlow();
   const removeNode = useFlowStore((state) => state.removeNode);
+  const updateNode = useFlowStore((state) => state.updateNode);
   const nodes = useFlowStore((state) => state.nodes);
+  const edges = useFlowStore((state) => state.edges);
   const [isHovered, setIsHovered] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ width: number; height: number; mouseX: number; mouseY: number } | null>(null);
@@ -28,12 +30,95 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
     }
   }
 
-  // Find child nodes - use useMemo to recalculate when nodes change
-  const childNodes = useMemo(() => {
-    return getNodes().filter((n) => n.parentId === id);
-  }, [nodes, id, getNodes]);
+  // Find child nodes and calculate execution order based on edges
+  const { childNodes, hasChildren, executionOrder } = useMemo(() => {
+    const children = getNodes().filter((n) => n.parentId === id);
 
-  const hasChildren = childNodes.length > 0;
+    // Calculate execution order based on connections
+    const childEdges = edges.filter(e => {
+      const sourceNode = nodes.find(n => n.id === e.source);
+      const targetNode = nodes.find(n => n.id === e.target);
+      return sourceNode?.parentId === id && targetNode?.parentId === id;
+    });
+
+    // If there are no edges, don't assign any execution order
+    if (childEdges.length === 0) {
+      return {
+        childNodes: children,
+        hasChildren: children.length > 0,
+        executionOrder: new Map<string, number>(),
+      };
+    }
+
+    // Build adjacency list and track which nodes are connected
+    const incomingCount = new Map<string, number>();
+    const adjacency = new Map<string, string[]>();
+    const connectedNodes = new Set<string>();
+
+    children.forEach(child => {
+      incomingCount.set(child.id, 0);
+      adjacency.set(child.id, []);
+    });
+
+    childEdges.forEach(edge => {
+      adjacency.get(edge.source)?.push(edge.target);
+      incomingCount.set(edge.target, (incomingCount.get(edge.target) || 0) + 1);
+      connectedNodes.add(edge.source);
+      connectedNodes.add(edge.target);
+    });
+
+    // Find starting nodes (those with no incoming edges BUT are connected)
+    const startNodes = children.filter(child =>
+      incomingCount.get(child.id) === 0 && connectedNodes.has(child.id)
+    );
+
+    // Perform topological sort to determine execution order (only for connected nodes)
+    const order: string[] = [];
+    const queue = [...startNodes.map(n => n.id)];
+    const visited = new Set<string>();
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      order.push(current);
+
+      const neighbors = adjacency.get(current) || [];
+      neighbors.forEach(neighbor => {
+        const count = incomingCount.get(neighbor) || 0;
+        incomingCount.set(neighbor, count - 1);
+        if (incomingCount.get(neighbor) === 0) {
+          queue.push(neighbor);
+        }
+      });
+    }
+
+    // Create execution order map (nodeId -> order number)
+    // Only assign numbers to nodes that are part of the connected flow
+    const orderMap = new Map<string, number>();
+    order.forEach((nodeId, index) => {
+      orderMap.set(nodeId, index + 1);
+    });
+
+    return {
+      childNodes: children,
+      hasChildren: children.length > 0,
+      executionOrder: orderMap,
+    };
+  }, [nodes, edges, id, getNodes]);
+
+  // Update child nodes with their execution order
+  useEffect(() => {
+    childNodes.forEach(child => {
+      const orderNumber = executionOrder.get(child.id);
+      const currentOrder = (child.data as FlowNodeData).loopExecutionOrder;
+
+      // Only update if order has changed to avoid infinite loops
+      if (orderNumber !== currentOrder) {
+        updateNode(child.id, { loopExecutionOrder: orderNumber });
+      }
+    });
+  }, [childNodes, executionOrder, updateNode]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -60,7 +145,7 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
   }, []);
 
   // Custom resize handlers
-  const handleResizeStart = useCallback((e: React.MouseEvent, direction: 'right' | 'bottom') => {
+  const handleResizeStart = useCallback((e: React.MouseEvent, direction: 'right' | 'bottom' | 'corner') => {
     e.stopPropagation();
     e.preventDefault();
 
@@ -115,7 +200,11 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
       let newWidth = resizeStartRef.current.width;
       let newHeight = resizeStartRef.current.height;
 
-      if (direction === 'right') {
+      if (direction === 'corner') {
+        // Corner resize - update both dimensions
+        newWidth = Math.max(originalSizeRef.current?.width ?? 250, resizeStartRef.current.width + deltaX);
+        newHeight = Math.max(originalSizeRef.current?.height ?? 150, resizeStartRef.current.height + deltaY);
+      } else if (direction === 'right') {
         // Allow resizing, but not smaller than the original size
         newWidth = Math.max(originalSizeRef.current?.width ?? 250, resizeStartRef.current.width + deltaX);
       } else if (direction === 'bottom') {
@@ -162,8 +251,8 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
       <div
         className={`relative bg-white/90 rounded-2xl border-2 transition-all group ${
           selected
-            ? 'border-purple-400 shadow-xl ring-2 ring-purple-200'
-            : 'border-purple-200 shadow-lg hover:shadow-xl hover:border-purple-300'
+            ? 'border-gray-400 shadow-xl ring-2 ring-gray-200'
+            : 'border-gray-200 shadow-lg hover:shadow-xl hover:border-gray-300'
         } w-full h-full flex flex-col overflow-visible`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -180,68 +269,49 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
         </svg>
       </button>
 
-      {/* Custom resize handle - Right edge */}
+      {/* Custom resize handle - Bottom-right corner */}
       <div
-        className={`nodrag absolute right-0 top-1/2 -translate-y-1/2 w-3 h-16 cursor-ew-resize transition-opacity z-50 ${
+        className={`nodrag absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize transition-opacity z-50 ${
           isHovered || selected ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onMouseDown={(e) => {
           e.stopPropagation();
-          handleResizeStart(e, 'right');
+          handleResizeStart(e, 'corner');
         }}
         style={{ pointerEvents: 'auto' }}
-        title="Drag to resize width"
+        title="Drag to resize"
       >
-        <div className="w-full h-full bg-purple-400 hover:bg-purple-500 rounded-l flex items-center justify-center shadow-md">
-          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        <div className="w-full h-full bg-gray-400 hover:bg-gray-500 rounded-tl flex items-center justify-center shadow-md">
+          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
           </svg>
         </div>
       </div>
 
-      {/* Custom resize handle - Bottom edge */}
-      <div
-        className={`nodrag absolute bottom-0 left-1/2 -translate-x-1/2 h-3 w-16 cursor-ns-resize transition-opacity z-50 ${
-          isHovered || selected ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
-        onMouseDown={(e) => {
-          e.stopPropagation();
-          handleResizeStart(e, 'bottom');
-        }}
-        style={{ pointerEvents: 'auto' }}
-        title="Drag to resize height"
-      >
-        <div className="w-full h-full bg-purple-400 hover:bg-purple-500 rounded-t flex items-center justify-center shadow-md">
-          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-      </div>
-
-      {/* Handles - left (input) and right (output) only */}
-      <Handle type="source" position={Position.Left} id="left" className="w-2.5 h-2.5 bg-purple-500 border-2 border-white shadow-sm" />
-      <Handle type="source" position={Position.Right} id="right" className="w-2.5 h-2.5 bg-purple-500 border-2 border-white shadow-sm" />
+      {/* Handles - left (input square) and right (output circle) like task node */}
+      <Handle type="target" position={Position.Left} id="left" className="!w-3 !h-3 !border-2 !border-white !bg-gray-300 !rounded-sm hover:!bg-gray-400 transition-all" />
+      <Handle type="source" position={Position.Right} id="right" className="!w-3 !h-3 !border-2 !border-white !bg-gray-300 !rounded-full hover:!bg-gray-400 transition-all" />
 
       {/* Header with subtle gradient */}
       <div
-        className="bg-gradient-to-r from-purple-50 to-purple-100 border-b-2 border-purple-200 px-4 py-[15px] rounded-t-2xl"
+        className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200 px-4 py-[15px] rounded-t-2xl relative"
         onDragOver={preventHeaderDrop}
         onDrop={preventHeaderDrop}
       >
+        {/* Badge - positioned absolute in top right */}
+        {nodeData.badge && (
+          <div className="absolute top-2 right-2 px-2 py-0.5 bg-gray-100 border border-gray-300 rounded text-xs font-mono text-gray-800">
+            {nodeData.badge}
+          </div>
+        )}
+
         <div className="flex items-center gap-2.5">
-          <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center shadow-sm">
+          <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-gray-400 to-gray-600 flex items-center justify-center shadow-sm">
             <span className="text-white text-sm font-bold">↻</span>
           </div>
           <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <div className="font-semibold text-sm text-gray-900">{nodeData.label || 'Loop'}</div>
-              {nodeData.badge && (
-                <div className="px-2 py-0.5 bg-purple-100 border border-purple-300 rounded text-xs font-mono text-purple-800">
-                  {nodeData.badge}
-                </div>
-              )}
-            </div>
-            <div className="text-xs text-purple-700">
+            <div className="font-semibold text-sm text-gray-900">{nodeData.label || 'Loop'}</div>
+            <div className="text-xs text-gray-700">
               {nodeData.step?.for_each ? (
                 <>
                   <span className="font-mono font-medium">{nodeData.step.for_each}</span>
@@ -257,14 +327,14 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
 
       {/* Droppable body area - entire area is droppable */}
       <div
-        className="flex-1 min-h-[80px] relative bg-purple-50/10 p-[20px] rounded-b-2xl"
+        className="flex-1 min-h-[80px] relative bg-gray-50/30 p-[20px] rounded-b-2xl"
         data-dropzone="true"
         data-section="do"
         onDragOver={onDragOver}
       >
         {/* Empty state hint - only when no children */}
         {!hasChildren && (
-          <div className="flex items-center justify-center h-full text-purple-500 text-sm text-center pointer-events-none">
+          <div className="flex items-center justify-center h-full text-gray-400 text-sm text-center pointer-events-none">
             Drop tasks here to execute in loop
           </div>
         )}
