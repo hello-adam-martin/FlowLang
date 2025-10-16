@@ -283,7 +283,22 @@ function buildYamlWithComments(
         if (step.inputs && Object.keys(step.inputs).length > 0) {
           lines.push(`    inputs:`);
           Object.entries(step.inputs).forEach(([key, value]) => {
-            lines.push(`      ${key}: ${JSON.stringify(value)}`);
+            let comment = '';
+            // Add comment showing source node for variable references
+            if (typeof value === 'string' && value.startsWith('${') && value.endsWith('}')) {
+              const varPath = value.slice(2, -1);
+              const sourceNodeId = varPath.split('.')[0];
+
+              // Find the source node to get its label
+              if (sourceNodeId !== 'inputs') {
+                const sourceNode = nodes.find(n => n.id === sourceNodeId);
+                if (sourceNode) {
+                  const sourceLabel = sourceNode.data.label || sourceNodeId;
+                  comment = `  # from ${sourceLabel}`;
+                }
+              }
+            }
+            lines.push(`      ${key}: ${JSON.stringify(value)}${comment}`);
           });
         }
         if (step.outputs && step.outputs.length > 0) {

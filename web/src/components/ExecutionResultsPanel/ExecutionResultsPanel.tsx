@@ -214,10 +214,41 @@ export default function ExecutionResultsPanel({ isOpen, onClose }: ExecutionResu
                               </div>
                             )}
 
+                            {/* Input Data */}
+                            {nodeState.inputs && Object.keys(nodeState.inputs).length > 0 && (
+                              <div>
+                                <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                                  <svg className="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                  </svg>
+                                  Input Data
+                                </h4>
+                                <div className="text-xs font-mono bg-gray-50 p-2 rounded border border-gray-200 overflow-x-auto">
+                                  <pre className="inline">{`{`}</pre>
+                                  {Object.entries(nodeState.inputs).map(([key, value], index, arr) => (
+                                    <div key={key} className="ml-4">
+                                      <pre className="inline">{`"${key}": `}</pre>
+                                      <pre className="inline">{JSON.stringify(value)}</pre>
+                                      {nodeState.inputSources?.[key] && (
+                                        <span className="text-gray-400 ml-2">{`// from ${nodeState.inputSources[key]}`}</span>
+                                      )}
+                                      {index < arr.length - 1 && <pre className="inline">,</pre>}
+                                    </div>
+                                  ))}
+                                  <pre className="inline">{`}`}</pre>
+                                </div>
+                              </div>
+                            )}
+
                             {/* Output Data */}
                             {nodeState.output && (
                               <div>
-                                <h4 className="text-xs font-semibold text-gray-700 mb-1">Output</h4>
+                                <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                                  <svg className="w-3.5 h-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                  Output Data
+                                </h4>
                                 <pre className="text-xs font-mono bg-gray-50 p-2 rounded border border-gray-200 overflow-x-auto">
                                   {JSON.stringify(nodeState.output, null, 2)}
                                 </pre>
