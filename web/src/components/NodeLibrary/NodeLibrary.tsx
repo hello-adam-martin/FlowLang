@@ -9,6 +9,7 @@ import SwitchContainerNode from '../nodes/SwitchContainerNode';
 import ParallelContainerNode from '../nodes/ParallelContainerNode';
 import SubflowNode from '../nodes/SubflowNode';
 import ExitNode from '../nodes/ExitNode';
+import NoteNode from '../nodes/NoteNode';
 import ConnectionTaskSection from './ConnectionTaskSection';
 import { useFlowStore } from '../../store/flowStore';
 import type { ConnectionTaskMetadata } from '../../data/connectionTasks';
@@ -56,6 +57,12 @@ const nodeTemplates: NodeTemplate[] = [
     description: 'Terminate flow execution',
     icon: '⏹',
   },
+  {
+    type: 'note',
+    label: 'Note',
+    description: 'Add annotation or comment',
+    icon: '📝',
+  },
 ];
 
 // Create drag preview by rendering actual React component
@@ -72,7 +79,7 @@ const createDragPreview = (nodeType: FlowNodeType): HTMLElement => {
   };
 
   // Set fixed dimensions for containers
-  if (nodeType !== 'task' && nodeType !== 'subflow' && nodeType !== 'exit') {
+  if (nodeType !== 'task' && nodeType !== 'subflow' && nodeType !== 'exit' && nodeType !== 'note') {
     if (nodeType === 'conditionalContainer' || nodeType === 'switchContainer') {
       preview.style.width = '600px';
       preview.style.height = '300px';
@@ -80,6 +87,9 @@ const createDragPreview = (nodeType: FlowNodeType): HTMLElement => {
       preview.style.width = '450px';
       preview.style.height = '195px';
     }
+  } else if (nodeType === 'note') {
+    preview.style.width = '200px';
+    preview.style.height = '150px';
   }
 
   // Render the appropriate node component
@@ -113,6 +123,9 @@ const createDragPreview = (nodeType: FlowNodeType): HTMLElement => {
       break;
     case 'exit':
       nodeComponent = <ExitNode {...nodeProps} />;
+      break;
+    case 'note':
+      nodeComponent = <NoteNode {...nodeProps} />;
       break;
   }
 

@@ -11,6 +11,7 @@ export type FlowNodeType =
   | 'parallelContainer'     // Parallel execution wrapper - contains child tasks
   | 'subflow'           // Subflow execution node
   | 'exit'              // Exit/termination node
+  | 'note'              // Annotation/comment node - doesn't affect flow execution
   | 'input'
   | 'output';
 

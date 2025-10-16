@@ -73,6 +73,9 @@ function App() {
     } else if (nodeType === 'exit') {
       nodeWidth = 160;
       nodeHeight = 60;
+    } else if (nodeType === 'note') {
+      nodeWidth = 200;
+      nodeHeight = 150;
     }
 
     // Helper function to get node dimensions
@@ -82,6 +85,7 @@ function App() {
       if (node.type === 'parallelContainer') return { width: 450, height: 150 };
       if (node.type === 'loopContainer') return { width: 450, height: 195 };
       if (node.type === 'exit') return { width: 160, height: 60 };
+      if (node.type === 'note') return { width: 200, height: 150 };
       return { width: 200, height: 80 };
     };
 

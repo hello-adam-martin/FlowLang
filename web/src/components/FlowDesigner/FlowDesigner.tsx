@@ -28,6 +28,7 @@ import SwitchContainerNode from '../nodes/SwitchContainerNode';
 import ParallelContainerNode from '../nodes/ParallelContainerNode';
 import SubflowNode from '../nodes/SubflowNode';
 import ExitNode from '../nodes/ExitNode';
+import NoteNode from '../nodes/NoteNode';
 
 // Import custom edge types
 import DeletableEdge from '../edges/DeletableEdge';
@@ -42,6 +43,7 @@ const nodeTypes = {
   parallelContainer: ParallelContainerNode,
   subflow: SubflowNode,
   exit: ExitNode,
+  note: NoteNode,
 };
 
 const edgeTypes = {
@@ -479,6 +481,9 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
       } else if (type === 'exit') {
         nodeWidth = 160;
         nodeHeight = 60;
+      } else if (type === 'note') {
+        nodeWidth = 200;
+        nodeHeight = 150;
       } else if (type === 'conditionalContainer' || type === 'switchContainer') {
         nodeWidth = 600;
         nodeHeight = 300;
