@@ -13,6 +13,8 @@ interface NodeExecutionData {
   endTime?: number;
   output?: any;
   error?: string;
+  inputs?: Record<string, any>;
+  inputSources?: Record<string, string>;
 }
 
 interface ExecutionState {
