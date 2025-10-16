@@ -16,6 +16,7 @@ import type { ExecutionHistoryEntry } from '../../types/execution';
 import type { FlowNodeData } from '../../types/node';
 import type { NodeExecutionData } from '../../types/project';
 import ExecutionNodeOverlay from '../ExecutionNodeOverlay/ExecutionNodeOverlay';
+import ExecutionDetailsViewer from '../ExecutionDetailsViewer/ExecutionDetailsViewer';
 
 // Import custom node types
 import StartNode from '../nodes/StartNode';
@@ -58,6 +59,7 @@ export default function HistoryFlowViewer({ execution, nodes, edges }: HistoryFl
   const [replaySpeed, setReplaySpeed] = useState(1); // 1x, 2x, 4x
   const [replayTime, setReplayTime] = useState(0); // Current replay time in ms
   const replayTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [showResultsModal, setShowResultsModal] = useState(false);
 
   // Build execution timeline sorted by start time
   const executionTimeline = Object.entries(execution.nodeStates)
@@ -462,9 +464,23 @@ export default function HistoryFlowViewer({ execution, nodes, edges }: HistoryFl
         </div>
       )}
 
-      {/* Replay Controls */}
+      {/* Replay Controls and Results Button */}
       {executionTimeline.length > 0 && (
-        <div className="absolute top-4 right-4 bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-20">
+        <div className="absolute top-4 right-4 flex items-start gap-3 z-20">
+          {/* Results Button */}
+          <button
+            onClick={() => setShowResultsModal(true)}
+            className="bg-white rounded-lg shadow-xl border border-gray-200 px-4 py-2 hover:bg-gray-50 transition-colors flex items-center gap-2"
+            title="View execution results"
+          >
+            <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span className="text-sm font-medium text-gray-700">Results</span>
+          </button>
+
+          {/* Replay Controls */}
+          <div className="bg-white rounded-lg shadow-xl border border-gray-200 p-3">
           <div className="flex items-center gap-3">
             {/* Play/Pause Button */}
             <button
@@ -525,6 +541,58 @@ export default function HistoryFlowViewer({ execution, nodes, edges }: HistoryFl
             >
               {replaySpeed}x
             </button>
+          </div>
+          </div>
+        </div>
+      )}
+
+      {/* Results Modal */}
+      {showResultsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-semibold text-gray-900">Execution Results</h2>
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${
+                  execution.status === 'completed' ? 'text-green-600 bg-green-50 border-green-200' :
+                  execution.status === 'error' ? 'text-red-600 bg-red-50 border-red-200' :
+                  'text-orange-600 bg-orange-50 border-orange-200'
+                }`}>
+                  <span className="font-bold">
+                    {execution.status === 'completed' ? '✓' : execution.status === 'error' ? '✗' : '⏹'}
+                  </span>
+                  <span className="text-sm font-medium capitalize">{execution.status}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowResultsModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <ExecutionDetailsViewer
+                execution={execution}
+                nodes={nodes}
+                isHistorical={true}
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() => setShowResultsModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
