@@ -86,7 +86,7 @@ function TaskNode({ data, selected, id }: NodeProps) {
 
   return (
     <div
-      className={`px-3 py-2 rounded-xl border min-w-[140px] transition-all relative group overflow-hidden ${
+      className={`px-3 py-2 rounded-xl border min-w-[140px] transition-all relative group overflow-visible ${
         nodeExecutionState
           ? executionStyles
           : connectionType
@@ -106,7 +106,7 @@ function TaskNode({ data, selected, id }: NodeProps) {
       {/* Progress fill background for running nodes */}
       {nodeExecutionState?.state === 'running' && executionProgress < 100 && (
         <div
-          className="absolute inset-0 rounded-xl pointer-events-none transition-all duration-300 ease-out"
+          className="absolute inset-0 rounded-xl pointer-events-none transition-all duration-300 ease-out overflow-hidden"
           style={{ zIndex: 0 }}
         >
           <div
