@@ -52,8 +52,11 @@ function App() {
     return () => clearTimeout(timeout);
   }, [nodes, edges, flowDefinition, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition]);
 
-  // Show properties panel when a node is selected
-  const showProperties = selectedNode !== null;
+  // Show properties panel when a node is selected (but not for note nodes)
+  const showProperties = selectedNode !== null && (() => {
+    const node = nodes.find(n => n.id === selectedNode);
+    return node?.type !== 'note';
+  })();
 
   // Handle creating a node from keyboard shortcut
   const handleCreateNode = useCallback((nodeType: FlowNodeType) => {
