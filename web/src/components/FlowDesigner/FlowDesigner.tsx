@@ -493,7 +493,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
       } else {
         // loopContainer
         nodeWidth = 450;
-        nodeHeight = 195;
+        nodeHeight = 150;
       }
 
       // Calculate position centered on cursor

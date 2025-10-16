@@ -46,18 +46,16 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
             : 'border-amber-200 shadow-lg hover:shadow-xl hover:border-amber-300'
         } w-full h-full flex flex-col`}
       >
-      {/* Delete button - shows when selected */}
-      {selected && (
-        <button
-          onClick={handleDelete}
-          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded flex items-center justify-center shadow-sm transition-all z-10 opacity-90 hover:opacity-100"
-          title="Delete container"
-        >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
-      )}
+      {/* Delete button - shows on hover */}
+      <button
+        onClick={handleDelete}
+        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded flex items-center justify-center shadow-sm transition-all z-10 opacity-0 group-hover:opacity-100 cursor-pointer"
+        title="Delete container"
+      >
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </button>
 
       {/* Handles - left (input) and right (output) only */}
       <Handle type="source" position={Position.Left} id="left" className="w-2.5 h-2.5 bg-amber-500 border-2 border-white shadow-sm" />
@@ -122,40 +120,46 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
       <div className="flex p-[15px] gap-4 flex-1 overflow-visible">
         {/* Then section */}
         <div
-          className="flex-1 border-2 border-dashed border-green-300 rounded-xl bg-green-50/40 backdrop-blur-sm p-[15px] min-h-[120px] min-w-[200px] flex flex-col"
+          className="relative flex-1 border-2 border-dashed border-green-300 rounded-xl bg-green-50/20 p-[15px] min-h-[120px] min-w-[200px]"
           onDragOver={onDragOver}
           data-section="then"
           data-dropzone="true"
         >
-          <div className="text-xs font-semibold text-green-700 mb-3">✓ Then</div>
-          {thenNodes.length === 0 ? (
-            <div className="flex items-center justify-center flex-1 text-green-600 text-xs text-center">
+          {/* Header label - always visible */}
+          <div className="absolute top-2 left-2 text-xs font-semibold text-green-700 bg-green-100/80 px-2 py-0.5 rounded z-10">
+            ✓ Then {thenNodes.length > 0 && `(${thenNodes.length})`}
+          </div>
+
+          {/* Empty state hint - only when no children */}
+          {thenNodes.length === 0 && (
+            <div className="flex items-center justify-center h-full text-green-600 text-xs text-center pointer-events-none">
               Drop tasks for<br/>true condition
             </div>
-          ) : (
-            <div className="text-xs font-medium text-green-700">
-              {thenNodes.length} task{thenNodes.length !== 1 ? 's' : ''}
-            </div>
           )}
+
+          {/* Child nodes render here automatically by ReactFlow */}
         </div>
 
         {/* Else section */}
         <div
-          className="flex-1 border-2 border-dashed border-red-300 rounded-xl bg-red-50/40 backdrop-blur-sm p-[15px] min-h-[120px] min-w-[200px] flex flex-col"
+          className="relative flex-1 border-2 border-dashed border-red-300 rounded-xl bg-red-50/20 p-[15px] min-h-[120px] min-w-[200px]"
           onDragOver={onDragOver}
           data-section="else"
           data-dropzone="true"
         >
-          <div className="text-xs font-semibold text-red-700 mb-3">✗ Else</div>
-          {elseNodes.length === 0 ? (
-            <div className="flex items-center justify-center flex-1 text-red-600 text-xs text-center">
+          {/* Header label - always visible */}
+          <div className="absolute top-2 left-2 text-xs font-semibold text-red-700 bg-red-100/80 px-2 py-0.5 rounded z-10">
+            ✗ Else {elseNodes.length > 0 && `(${elseNodes.length})`}
+          </div>
+
+          {/* Empty state hint - only when no children */}
+          {elseNodes.length === 0 && (
+            <div className="flex items-center justify-center h-full text-red-600 text-xs text-center pointer-events-none">
               Drop tasks for<br/>false condition
             </div>
-          ) : (
-            <div className="text-xs font-medium text-red-700">
-              {elseNodes.length} task{elseNodes.length !== 1 ? 's' : ''}
-            </div>
           )}
+
+          {/* Child nodes render here automatically by ReactFlow */}
         </div>
       </div>
       </div>

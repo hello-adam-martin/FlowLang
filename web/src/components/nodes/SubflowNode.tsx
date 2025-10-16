@@ -22,18 +22,16 @@ function SubflowNode({ data, selected, id }: NodeProps) {
           : 'border-indigo-200 shadow-md hover:shadow-lg hover:border-indigo-300 bg-gradient-to-br from-indigo-50 to-white'
       }`}
     >
-      {/* Delete button - shows when selected */}
-      {selected && (
-        <button
-          onClick={handleDelete}
-          className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded flex items-center justify-center shadow-sm transition-all z-10 opacity-90 hover:opacity-100"
-          title="Delete node"
-        >
-          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      )}
+      {/* Delete button - shows on hover */}
+      <button
+        onClick={handleDelete}
+        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded flex items-center justify-center shadow-sm transition-all z-10 opacity-0 group-hover:opacity-100 cursor-pointer"
+        title="Delete node"
+      >
+        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
 
       {/* Handles */}
       <Handle type="target" position={Position.Left} className="w-2.5 h-2.5 bg-indigo-500 border-2 border-white shadow-sm" />

@@ -101,18 +101,16 @@ function ParallelContainerNode({ selected, id, data }: NodeProps) {
         } w-full h-full`}
         onDragOver={onDragOver}
       >
-      {/* Delete button - shows when selected */}
-      {selected && (
-        <button
-          onClick={handleDelete}
-          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded flex items-center justify-center shadow-sm transition-all z-10 opacity-90 hover:opacity-100"
-          title="Delete container"
-        >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
-      )}
+      {/* Delete button - shows on hover */}
+      <button
+        onClick={handleDelete}
+        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded flex items-center justify-center shadow-sm transition-all z-10 opacity-0 group-hover:opacity-100 cursor-pointer"
+        title="Delete container"
+      >
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </button>
 
       {/* Handles - left (input) and right (output) only */}
       <Handle type="source" position={Position.Left} id="left" className="w-2.5 h-2.5 bg-green-500 border-2 border-white shadow-sm" />
@@ -148,29 +146,39 @@ function ParallelContainerNode({ selected, id, data }: NodeProps) {
       </div>
 
       {/* Droppable body area */}
-      <div className="p-[15px] min-h-[200px] relative" data-dropzone="true">
-        {/* Render ghost nodes for each track that doesn't have a task */}
+      <div className="p-[15px] min-h-[200px] relative overflow-visible" data-dropzone="true">
+        {/* Render track lanes - these are visual guides, child nodes render automatically by ReactFlow */}
         {tracks.map((track, index) => {
           // Check if this track has a task assigned
           const trackHasTask = childNodes.some((node) => (node.data as FlowNodeData).trackId === track.id);
-
-          if (trackHasTask) return null;
 
           const topPosition = 15 + (index * 60); // 15px initial offset + 60px per track (40px height + 20px gap)
 
           return (
             <div
               key={track.id}
-              className="absolute pointer-events-auto"
-              style={{ left: '45px', top: `${topPosition}px` }}
+              className="absolute w-full"
+              style={{ left: '0', top: `${topPosition}px`, right: '0' }}
               data-track-id={track.id}
             >
-              <div className="w-[140px] h-[40px] rounded-xl border-2 border-dashed border-green-300 bg-green-50/40 flex items-center justify-center relative group">
-                <span className="text-xs text-green-500">Track {index + 1}</span>
-                {/* Delete button - shows on hover */}
+              {/* Track background lane */}
+              <div className="mx-[15px] h-[40px] rounded-xl border-2 border-dashed border-green-300 bg-green-50/10 flex items-start justify-between px-2 py-1 relative group">
+                {/* Track label badge - positioned absolute to not block */}
+                <div className="absolute top-1 left-2 text-[10px] font-semibold text-green-700 bg-green-100/80 px-1.5 py-0.5 rounded z-10">
+                  Track {index + 1}
+                </div>
+
+                {/* Empty state hint - only when no task assigned */}
+                {!trackHasTask && (
+                  <div className="flex items-center justify-center w-full h-full text-green-500 text-xs pointer-events-none">
+                    Drop task here
+                  </div>
+                )}
+
+                {/* Delete track button - shows on hover */}
                 <button
                   onClick={(e) => handleRemoveTrack(e, track.id)}
-                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-sm transition-all opacity-0 group-hover:opacity-100"
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-sm transition-all opacity-0 group-hover:opacity-100 z-10"
                   title="Remove track"
                 >
                   <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -178,6 +186,8 @@ function ParallelContainerNode({ selected, id, data }: NodeProps) {
                   </svg>
                 </button>
               </div>
+
+              {/* Child nodes with trackId render here automatically by ReactFlow */}
             </div>
           );
         })}
