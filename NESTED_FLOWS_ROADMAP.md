@@ -73,31 +73,100 @@ The `loan_approval` flow demonstrates the complexity we need to support:
 ### Phase 1: Child Node Visualization (FOUNDATION)
 **Goal:** Make child nodes visible inside their parent containers
 
-**Files to Modify:**
-- `web/src/components/nodes/ConditionalContainerNode.tsx`
-- `web/src/components/nodes/ParallelContainerNode.tsx`
-- `web/src/components/nodes/LoopContainerNode.tsx`
-- `web/src/components/nodes/SwitchContainerNode.tsx`
+**Status by Container:**
+
+#### Loop Container - ✅ COMPLETE
+**File:** `web/src/components/nodes/LoopContainerNode.tsx`
+- ✅ Custom resize handle (bottom-right corner)
+- ✅ 30px padding constraint preventing edge positioning
+- ✅ Execution order tracking with numbered badges
+- ✅ Delete button on hover
+- ✅ Grey color scheme
+- ✅ Droppable "do" section with visual feedback
+- ✅ Children render automatically via ReactFlow parentId
+- ✅ Badge positioned top-right
+- ✅ Starting dimensions: 250x150px
+
+#### Conditional Container - 🟡 IN PROGRESS
+**File:** `web/src/components/nodes/ConditionalContainerNode.tsx`
+- ✅ Has "then" and "else" sections
+- ✅ Delete button on hover
+- ✅ Grey color scheme
+- ⚠️ Uses NodeResizer (not custom resize handle)
+- ⚠️ No padding constraints (nodes can snap to edges)
+- ❌ Execution order tracking not implemented
+- ❌ No visual differentiation when branch is active
+- ❌ Sections may need layout improvements
+
+**Needs:**
+- Custom resize handle like Loop container
+- 30px padding constraints
+- Visual highlighting of active branch during execution
+- Improved section layout/styling
+
+#### Parallel Container - 🟡 IN PROGRESS
+**File:** `web/src/components/nodes/ParallelContainerNode.tsx`
+- ✅ Has track system with ghost placeholders
+- ✅ Delete button on hover
+- ✅ Grey color scheme
+- ⚠️ Uses NodeResizer (not custom resize handle)
+- ⚠️ Track-specific drop zones work but complex
+- ❌ No padding constraints
+- ❌ No execution order tracking
+- ❌ Track management UI could be improved
+
+**Needs:**
+- Custom resize handle like Loop container
+- Padding constraints (but must respect track layout)
+- Execution progress visualization per track
+- Better track add/remove UI
+
+#### Switch Container - 🟡 IN PROGRESS
+**File:** `web/src/components/nodes/SwitchContainerNode.tsx`
+- ✅ Has case sections with dynamic add/remove
+- ✅ Has default section
+- ✅ Delete button on hover
+- ✅ Grey color scheme
+- ⚠️ Uses NodeResizer (not custom resize handle)
+- ❌ No padding constraints
+- ❌ No execution order tracking
+- ❌ Case management UI could be cleaner
+
+**Needs:**
+- Custom resize handle like Loop container
+- 30px padding constraints for all sections
+- Visual highlighting of active case during execution
+- Improved case add/remove UX
 
 **Tasks:**
-1.1. Render child nodes in "then" section of ConditionalContainerNode
-1.2. Render child nodes in "else" section of ConditionalContainerNode
-1.3. Render child nodes in parallel tracks of ParallelContainerNode
-1.4. Render child nodes in "do" section of LoopContainerNode
-1.5. Add mini-ReactFlow instance inside container sections
-1.6. Position children relatively within parent bounds
-1.7. Add visual indicators (border, background) for container membership
-1.8. Handle scrolling when many children
+1.1. ✅ Render child nodes in "do" section of LoopContainerNode
+1.2. ⚠️ Render child nodes in "then" section of ConditionalContainerNode (works but needs polish)
+1.3. ⚠️ Render child nodes in "else" section of ConditionalContainerNode (works but needs polish)
+1.4. ⚠️ Render child nodes in parallel tracks of ParallelContainerNode (works but needs polish)
+1.5. ⚠️ Render child nodes in switch cases of SwitchContainerNode (works but needs polish)
+1.6. ✅ Position children relatively within parent bounds (ReactFlow handles this)
+1.7. ✅ Add visual indicators (border, background) for container membership (grey scheme applied)
+1.8. ❌ Handle scrolling when many children (needs testing)
+1.9. ✅ Add padding constraints to prevent edge positioning (Loop only)
+1.10. ✅ Add custom resize handles (Loop only)
+1.11. ✅ Add execution order tracking (Loop only)
 
 **Test Criteria:**
-- [ ] Manually create a conditional with task nodes inside then/else sections
-- [ ] Children appear visually inside the container boundaries
-- [ ] Can see connections between child nodes
-- [ ] Container sections have distinct visual styling
-- [ ] Scrolling works if children overflow
+- [✅] Manually create a loop with task nodes inside
+- [✅] Children appear visually inside the loop container boundaries
+- [✅] Can see connections between child nodes inside loop
+- [✅] Container sections have distinct visual styling
+- [⚠️] Scrolling works if children overflow (needs testing with many nodes)
+- [⚠️] Same tests needed for Conditional, Parallel, and Switch containers
 
 **Expected Result:**
-User can drag tasks into container sections and see them rendered inside, even though YAML import/export won't work yet.
+All four container types should have:
+- Custom resize handles (bottom-right corner)
+- 30px padding constraints
+- Consistent visual styling
+- Delete on hover
+- Execution order tracking where applicable
+- Professional polish matching Loop container quality
 
 ---
 
