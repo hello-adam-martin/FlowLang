@@ -14,17 +14,11 @@ function App() {
   const [showNodeLibrary, setShowNodeLibrary] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const selectedNode = useFlowStore((state) => state.selectedNode);
-  const { nodes, edges, flowDefinition, addNode } = useFlowStore();
+  const { nodes, edges, flowDefinition, addNode, onConnect } = useFlowStore();
   const reactFlowInstanceRef = useRef<any>(null);
 
   // Show properties panel when a node is selected
   const showProperties = selectedNode !== null;
-
-  // Counter for generating unique node IDs
-  const nodeIdCounterRef = useRef(0);
-  const getNodeId = useCallback(() => {
-    return `node_${nodeIdCounterRef.current++}`;
-  }, []);
 
   // Handle creating a node from keyboard shortcut
   const handleCreateNode = useCallback((nodeType: FlowNodeType) => {
@@ -48,7 +42,7 @@ function App() {
 
     // Helper function to get node dimensions
     const getNodeDimensions = (node: any) => {
-      if (node.type === 'start') return { width: 80, height: 40 };
+      if (node.type === 'start') return { width: 180, height: 100 };
       if (node.type === 'conditionalContainer' || node.type === 'switchContainer') return { width: 600, height: 300 };
       if (node.type === 'parallelContainer') return { width: 450, height: 150 };
       if (node.type === 'loopContainer') return { width: 450, height: 195 };
@@ -119,7 +113,7 @@ function App() {
       }
     }
 
-    const nodeId = getNodeId();
+    const nodeId = useFlowStore.getState().getNextNodeId();
     let stepData: any = undefined;
 
     // Build step data for task nodes
@@ -151,17 +145,43 @@ function App() {
 
     addNode(newNode);
 
-    // Auto-fit view to show the new node after a brief delay
-    setTimeout(() => {
-      if (reactFlowInstanceRef.current?.fitView) {
-        reactFlowInstanceRef.current.fitView({
-          maxZoom: 1,
-          duration: 300,
-          padding: 0.2 // Add 20% padding around all nodes
-        });
+    // Automatically connect new node to the last added node
+    if (nodeType === 'task') {
+      // Get the latest state from the store to avoid stale closure
+      const currentEdges = useFlowStore.getState().edges;
+      const currentNodes = useFlowStore.getState().nodes;
+
+      // Find the last added node (excluding Start and the node we just added)
+      const nonStartNodes = currentNodes.filter(n => n.type !== 'start' && n.id !== nodeId);
+
+      if (nonStartNodes.length > 0) {
+        // Connect to the last added node
+        const lastNode = nonStartNodes[nonStartNodes.length - 1];
+
+        setTimeout(() => {
+          onConnect({
+            source: lastNode.id,
+            sourceHandle: 'output',
+            target: nodeId,
+            targetHandle: 'input',
+          });
+        }, 10);
+      } else {
+        // If this is the first node, connect to Start
+        const startNode = currentNodes.find(n => n.type === 'start');
+        if (startNode) {
+          setTimeout(() => {
+            onConnect({
+              source: startNode.id,
+              sourceHandle: 'output',
+              target: nodeId,
+              targetHandle: 'input',
+            });
+          }, 10);
+        }
       }
-    }, 50);
-  }, [addNode, getNodeId, nodes]);
+    }
+  }, [addNode, nodes, onConnect]);
 
   // Handle export to YAML
   const handleExportYaml = useCallback(() => {
@@ -204,7 +224,7 @@ function App() {
       <FlowToolbar onShowKeyboardHelp={() => setShowKeyboardHelp(true)} />
 
       {/* Main content area */}
-      <div className="flex flex-1 overflow-visible relative">
+      <div className="flex flex-1 overflow-hidden relative">
         {/* Add Node Button */}
         <button
           onClick={() => setShowNodeLibrary(!showNodeLibrary)}
@@ -216,7 +236,7 @@ function App() {
 
         {/* Sliding Node Library Panel - Right Side */}
         <div
-          className={`absolute top-0 right-0 h-full w-80 bg-white border-l border-gray-200 shadow-xl z-20 transform transition-transform duration-300 ease-in-out ${
+          className={`absolute top-0 right-0 h-full w-120 bg-white border-l border-gray-200 shadow-xl z-20 transform transition-transform duration-300 ease-in-out ${
             showNodeLibrary ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
@@ -244,7 +264,7 @@ function App() {
 
         {/* Right sidebar - Property Panel (hidden by default) */}
         {showProperties && (
-          <div className="w-80 bg-white border-l border-gray-200 overflow-y-auto">
+          <div className="w-120 h-full bg-white border-l border-gray-200 overflow-y-auto z-30">
             <PropertyPanel />
           </div>
         )}

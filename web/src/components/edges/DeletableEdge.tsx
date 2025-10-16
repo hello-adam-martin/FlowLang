@@ -12,8 +12,22 @@ export default function DeletableEdge({
   style = {},
   markerEnd,
   selected,
+  source,
+  target,
 }: EdgeProps) {
   const removeEdge = useFlowStore((state) => state.onEdgesChange);
+  const execution = useFlowStore((state) => state.execution);
+
+  // Check if this edge should be animated (data is flowing through it)
+  const sourceNodeState = execution.nodeStates[source || ''];
+  const targetNodeState = execution.nodeStates[target || ''];
+
+  // Edge is active if source is completed/running and target is running/pending
+  const isActive =
+    sourceNodeState &&
+    (sourceNodeState.state === 'completed' || sourceNodeState.state === 'running') &&
+    targetNodeState &&
+    (targetNodeState.state === 'running' || targetNodeState.state === 'pending');
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
@@ -28,9 +42,28 @@ export default function DeletableEdge({
     removeEdge([{ type: 'remove', id }]);
   };
 
+  // Determine edge style based on state
+  const edgeStyle = isActive
+    ? {
+        ...style,
+        stroke: '#f59e0b', // Amber color for active flow
+        strokeWidth: 3,
+        animation: 'dashdraw 0.5s linear infinite',
+        strokeDasharray: '5, 5',
+      }
+    : style;
+
+  // Update marker color if active
+  const edgeMarkerEnd = isActive
+    ? {
+        type: 'arrowclosed' as const,
+        color: '#f59e0b',
+      }
+    : markerEnd;
+
   return (
     <>
-      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      <BaseEdge path={edgePath} markerEnd={edgeMarkerEnd} style={edgeStyle} />
       {selected && (
         <EdgeLabelRenderer>
           <div

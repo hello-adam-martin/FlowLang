@@ -271,8 +271,9 @@ function buildYamlWithComments(
       }
 
       // Handle different step types
-      if (step.task) {
-        lines.push(`  - task: ${step.task}`);
+      if ('task' in step) {
+        // Task node - show even if task name is empty or undefined
+        lines.push(`  - task: ${step.task || 'TODO'}`);
         if (step.id) {
           lines.push(`    id: ${step.id}`);
         }
@@ -292,7 +293,22 @@ function buildYamlWithComments(
           });
         }
       } else if (step.if) {
-        lines.push(`  - if: ${step.if}`);
+        // Handle condition - can be string or object (quantified: any, all, none)
+        if (typeof step.if === 'string') {
+          lines.push(`  - if: ${step.if}`);
+        } else if (typeof step.if === 'object') {
+          lines.push(`  - if:`);
+          Object.entries(step.if).forEach(([key, value]) => {
+            if (Array.isArray(value)) {
+              lines.push(`      ${key}:`);
+              value.forEach((condition) => {
+                lines.push(`        - ${condition}`);
+              });
+            } else {
+              lines.push(`      ${key}: ${JSON.stringify(value)}`);
+            }
+          });
+        }
         if (step.id) {
           lines.push(`    id: ${step.id}`);
         }

@@ -4,6 +4,8 @@ import type { Step } from '../../types/flow';
 import KeyValueEditor from './KeyValueEditor';
 import YAMLPreviewModal from '../YAMLPreviewModal/YAMLPreviewModal';
 import { nodeToYaml } from '../../services/yamlConverter';
+import { useFlowStore } from '../../store/flowStore';
+import ExecutionStatusDisplay from './ExecutionStatusDisplay';
 
 interface TaskNodePropertiesProps {
   node: FlowNode;
@@ -12,6 +14,9 @@ interface TaskNodePropertiesProps {
 
 export default function TaskNodeProperties({ node, onUpdate }: TaskNodePropertiesProps) {
   const step = node.data.step || {};
+  const execution = useFlowStore((state) => state.execution);
+  const nodeExecutionState = execution.nodeStates[node.id];
+  const isExecutionActive = execution.status === 'running' || execution.status === 'paused';
 
   const [label, setLabel] = useState(node.data.label || '');
   const [taskName, setTaskName] = useState(step.task || '');
@@ -50,6 +55,9 @@ export default function TaskNodeProperties({ node, onUpdate }: TaskNodePropertie
 
   return (
     <div className="space-y-4">
+      {/* Execution Status - show when node has execution state */}
+      <ExecutionStatusDisplay nodeExecutionState={nodeExecutionState} />
+
       {/* Node Label */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -59,7 +67,8 @@ export default function TaskNodeProperties({ node, onUpdate }: TaskNodePropertie
           type="text"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          disabled={isExecutionActive}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-100"
           placeholder="Enter node label"
         />
       </div>
@@ -73,7 +82,8 @@ export default function TaskNodeProperties({ node, onUpdate }: TaskNodePropertie
           type="text"
           value={taskName}
           onChange={(e) => setTaskName(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          disabled={isExecutionActive}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-100"
           placeholder="e.g., ValidateInput"
         />
         <p className="mt-1 text-xs text-gray-500">
@@ -90,7 +100,8 @@ export default function TaskNodeProperties({ node, onUpdate }: TaskNodePropertie
           type="text"
           value={stepId}
           onChange={(e) => setStepId(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          disabled={isExecutionActive}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-100"
           placeholder="e.g., validate_input"
         />
         <p className="mt-1 text-xs text-gray-500">
@@ -106,7 +117,8 @@ export default function TaskNodeProperties({ node, onUpdate }: TaskNodePropertie
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          disabled={isExecutionActive}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-100"
           placeholder="Describe what this task does..."
           rows={2}
         />
@@ -120,6 +132,7 @@ export default function TaskNodeProperties({ node, onUpdate }: TaskNodePropertie
         placeholder={{ key: 'parameter', value: '${inputs.value}' }}
         allowVariables={true}
         currentNodeId={node.id}
+        disabled={isExecutionActive}
       />
 
       {/* Outputs */}
@@ -131,7 +144,8 @@ export default function TaskNodeProperties({ node, onUpdate }: TaskNodePropertie
           type="text"
           value={outputs}
           onChange={(e) => setOutputs(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          disabled={isExecutionActive}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-100"
           placeholder="result, status, data (comma-separated)"
         />
         <p className="mt-1 text-xs text-gray-500">

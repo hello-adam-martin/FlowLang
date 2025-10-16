@@ -4,6 +4,8 @@ import type { Step } from '../../types/flow';
 import VariableSelector from './VariableSelector';
 import YAMLPreviewModal from '../YAMLPreviewModal/YAMLPreviewModal';
 import { nodeToYaml } from '../../services/yamlConverter';
+import { useFlowStore } from '../../store/flowStore';
+import ExecutionStatusDisplay from './ExecutionStatusDisplay';
 
 interface ConditionalNodePropertiesProps {
   node: FlowNode;
@@ -14,6 +16,8 @@ type ConditionType = 'simple' | 'all' | 'any' | 'none';
 
 export default function ConditionalNodeProperties({ node, onUpdate }: ConditionalNodePropertiesProps) {
   const step = node.data.step || {};
+  const execution = useFlowStore((state) => state.execution);
+  const nodeExecutionState = execution.nodeStates[node.id];
 
   const [label, setLabel] = useState(node.data.label || '');
   const [badge, setBadge] = useState(node.data.badge || '');
@@ -118,6 +122,9 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
 
   return (
     <div className="space-y-4">
+      {/* Execution Status */}
+      <ExecutionStatusDisplay nodeExecutionState={nodeExecutionState} />
+
       {/* Node Label */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">

@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { FlowNodeData } from '../../types/node';
 import { useFlowStore } from '../../store/flowStore';
 import type { ConnectionType } from '../../types/flow';
+import QuickConnectHandle from '../handles/QuickConnectHandle';
 
 // Connection icons and colors
 const CONNECTION_ICONS: Record<ConnectionType, string> = {
@@ -28,6 +29,10 @@ function TaskNode({ data, selected, id }: NodeProps) {
   const hasErrors = nodeData.errors && nodeData.errors.length > 0;
   const removeNode = useFlowStore((state) => state.removeNode);
   const flowDefinition = useFlowStore((state) => state.flowDefinition);
+  const execution = useFlowStore((state) => state.execution);
+
+  // Get execution state for this node
+  const nodeExecutionState = execution.nodeStates[id];
 
   // Get connection type if this task has a connection
   const connectionName = nodeData.step?.connection;
@@ -46,17 +51,48 @@ function TaskNode({ data, selected, id }: NodeProps) {
     removeNode(id);
   };
 
+  // Determine border and background based on execution state
+  let executionStyles = '';
+  if (nodeExecutionState) {
+    switch (nodeExecutionState.state) {
+      case 'pending':
+        executionStyles = 'border-purple-400 bg-purple-50 shadow-lg ring-2 ring-purple-200 animate-pulse';
+        break;
+      case 'running':
+        executionStyles = 'border-yellow-400 bg-yellow-50 shadow-lg ring-2 ring-yellow-200 animate-pulse';
+        break;
+      case 'completed':
+        executionStyles = 'border-green-400 bg-green-50 shadow-md';
+        break;
+      case 'error':
+        executionStyles = 'border-red-500 bg-red-50 shadow-md';
+        break;
+      case 'skipped':
+        executionStyles = 'border-gray-300 bg-gray-100 opacity-60';
+        break;
+      default:
+        executionStyles = 'border-blue-200 bg-blue-50';
+    }
+  }
+
   return (
     <div
       className={`px-3 py-2 rounded-xl border min-w-[140px] transition-all relative group ${
-        connectionType ? colors.bg : 'bg-white'
+        nodeExecutionState
+          ? executionStyles
+          : connectionType
+          ? colors.bg
+          : 'bg-white'
       } ${
-        selected
+        !nodeExecutionState && selected
           ? 'border-blue-500 shadow-lg ring-2 ring-blue-200'
-          : hasErrors
+          : !nodeExecutionState && hasErrors
           ? 'border-red-400 shadow-md'
-          : 'border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300'
+          : !nodeExecutionState
+          ? 'border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300'
+          : ''
       }`}
+      style={{ minHeight: '47px' }}
     >
       {/* Delete button - shows when selected */}
       {selected && (
@@ -71,33 +107,19 @@ function TaskNode({ data, selected, id }: NodeProps) {
         </button>
       )}
 
-      {/* Handles on all four sides - works as both source and target with connectionMode="loose" */}
+      {/* Input handle (left side) - square shape to distinguish from output */}
       <Handle
-        type="source"
-        position={Position.Top}
-        id="top"
-        className="w-2 h-2 border-2 border-white bg-gray-400"
-      />
-
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="right"
-        className="w-2 h-2 border-2 border-white bg-gray-400"
-      />
-
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="bottom"
-        className="w-2 h-2 border-2 border-white bg-gray-400"
-      />
-
-      <Handle
-        type="source"
+        type="target"
         position={Position.Left}
-        id="left"
-        className="w-2 h-2 border-2 border-white bg-gray-400"
+        id="input"
+        className="!w-3 !h-3 !border-2 !border-white !bg-gray-300 !rounded-sm hover:!bg-gray-400 transition-all"
+      />
+
+      {/* Output handle (right side) with quick connect */}
+      <QuickConnectHandle
+        nodeId={id}
+        position={Position.Right}
+        id="output"
       />
 
       <div className="flex items-center gap-2">
@@ -105,8 +127,30 @@ function TaskNode({ data, selected, id }: NodeProps) {
           <span className="text-white text-xs font-bold">{icon}</span>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-gray-900 truncate">
-            {nodeData.label || 'New Task'}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-gray-900 truncate">
+              {nodeData.label || 'New Task'}
+            </span>
+            {/* Execution state badge */}
+            {nodeExecutionState && (
+              <span className="flex-shrink-0">
+                {nodeExecutionState.state === 'pending' && (
+                  <span className="text-[10px] font-bold text-purple-600">⏸</span>
+                )}
+                {nodeExecutionState.state === 'running' && (
+                  <span className="text-[10px] font-bold text-yellow-600">⟳</span>
+                )}
+                {nodeExecutionState.state === 'completed' && (
+                  <span className="text-[10px] font-bold text-green-600">✓</span>
+                )}
+                {nodeExecutionState.state === 'error' && (
+                  <span className="text-[10px] font-bold text-red-600">✗</span>
+                )}
+                {nodeExecutionState.state === 'skipped' && (
+                  <span className="text-[10px] font-bold text-gray-500">⊘</span>
+                )}
+              </span>
+            )}
           </div>
           {nodeData.step?.task && (
             <div className="text-[10px] text-gray-600 font-mono truncate">
@@ -118,10 +162,26 @@ function TaskNode({ data, selected, id }: NodeProps) {
               📌 {connectionName}
             </div>
           )}
+          {/* Show execution timing */}
+          {nodeExecutionState && nodeExecutionState.startTime && (
+            <div className="text-[10px] text-gray-500 mt-0.5">
+              {nodeExecutionState.endTime
+                ? `${((nodeExecutionState.endTime - nodeExecutionState.startTime) / 1000).toFixed(2)}s`
+                : 'Running...'}
+            </div>
+          )}
         </div>
       </div>
 
-      {hasErrors && (
+      {/* Show execution error if present */}
+      {nodeExecutionState?.error && (
+        <div className="mt-1.5 text-[10px] text-red-600 truncate">
+          {nodeExecutionState.error}
+        </div>
+      )}
+
+      {/* Show validation errors if present */}
+      {hasErrors && !nodeExecutionState?.error && (
         <div className="mt-1.5 text-[10px] text-red-600 truncate">
           {nodeData.errors![0]}
         </div>

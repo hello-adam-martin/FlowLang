@@ -161,3 +161,24 @@ body {
   }
 }
 
+/* Animated data flow on edges */
+@keyframes dashdraw {
+  from {
+    stroke-dashoffset: 10;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Connection line styling - the line shown when dragging a connection */
+.react-flow__connectionline {
+  stroke: #e5e7eb !important;
+  stroke-width: 1.5 !important;
+}
+
+.react-flow__connection-path {
+  stroke: #e5e7eb !important;
+  stroke-width: 1.5 !important;
+}
+

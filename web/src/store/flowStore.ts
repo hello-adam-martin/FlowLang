@@ -3,12 +3,42 @@ import { addEdge, applyNodeChanges, applyEdgeChanges, type Node, type Edge, type
 import type { FlowNodeData } from '../types/node';
 import type { FlowDefinition } from '../types/flow';
 
+type ExecutionStatus = 'idle' | 'running' | 'paused' | 'completed' | 'error';
+type NodeExecutionState = 'pending' | 'running' | 'completed' | 'error' | 'skipped';
+
+interface NodeExecutionData {
+  state: NodeExecutionState;
+  startTime?: number;
+  endTime?: number;
+  output?: any;
+  error?: string;
+}
+
+interface ExecutionState {
+  status: ExecutionStatus;
+  stepMode: boolean;
+  currentNodeId: string | null;
+  nodeStates: Record<string, NodeExecutionData>;
+  executionLog: Array<{
+    nodeId: string;
+    timestamp: number;
+    message: string;
+    level: 'info' | 'warning' | 'error';
+  }>;
+  inputs: Record<string, any>;
+  outputs: Record<string, any>;
+  startTime?: number;
+  endTime?: number;
+}
+
 interface FlowStore {
   // State
   nodes: Node<FlowNodeData>[];
   edges: Edge[];
   flowDefinition: FlowDefinition;
   selectedNode: string | null;
+  nodeIdCounter: number;
+  execution: ExecutionState;
 
   // Actions
   setNodes: (nodes: Node<FlowNodeData>[]) => void;
@@ -24,6 +54,18 @@ interface FlowStore {
   removeNode: (nodeId: string) => void;
   updateNode: (nodeId: string, data: Partial<FlowNodeData>) => void;
   updateFlowDefinition: (updates: Partial<FlowDefinition>) => void;
+  getNextNodeId: () => string;
+
+  // Execution actions
+  startExecution: (inputs: Record<string, any>) => void;
+  stopExecution: () => void;
+  pauseExecution: () => void;
+  resumeExecution: () => void;
+  setStepMode: (enabled: boolean) => void;
+  updateNodeExecutionState: (nodeId: string, state: Partial<NodeExecutionData>) => void;
+  addExecutionLog: (nodeId: string, message: string, level?: 'info' | 'warning' | 'error') => void;
+  completeExecution: (outputs: Record<string, any>) => void;
+  resetExecution: () => void;
 
   // Reset
   reset: () => void;
@@ -41,7 +83,7 @@ const initialNodes: Node<FlowNodeData>[] = [
   {
     id: 'start',
     type: 'start',
-    position: { x: 250, y: 100 },
+    position: { x: 105, y: 105 }, // Grid-aligned to 15x15 grid (7x7 grid cells)
     data: {
       label: 'Start',
       type: 'start',
@@ -51,12 +93,24 @@ const initialNodes: Node<FlowNodeData>[] = [
   },
 ];
 
+const initialExecutionState: ExecutionState = {
+  status: 'idle',
+  stepMode: false,
+  currentNodeId: null,
+  nodeStates: {},
+  executionLog: [],
+  inputs: {},
+  outputs: {},
+};
+
 export const useFlowStore = create<FlowStore>((set, get) => ({
   // Initial state
   nodes: initialNodes,
   edges: [],
   flowDefinition: initialFlowDefinition,
   selectedNode: null,
+  nodeIdCounter: 0,
+  execution: initialExecutionState,
 
   // Setters
   setNodes: (nodes) => set({ nodes }),
@@ -130,6 +184,114 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
     });
   },
 
+  getNextNodeId: () => {
+    const currentCounter = get().nodeIdCounter;
+    set({ nodeIdCounter: currentCounter + 1 });
+    return `node_${currentCounter}`;
+  },
+
+  // Execution actions
+  startExecution: (inputs) => {
+    set((state) => ({
+      execution: {
+        ...initialExecutionState,
+        stepMode: state.execution.stepMode, // Preserve step mode setting
+        status: 'running',
+        inputs,
+        startTime: Date.now(),
+      },
+    }));
+  },
+
+  stopExecution: () => {
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        status: 'idle',
+        currentNodeId: null,
+        endTime: Date.now(),
+      },
+    }));
+  },
+
+  pauseExecution: () => {
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        status: 'paused',
+      },
+    }));
+  },
+
+  resumeExecution: () => {
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        status: 'running',
+      },
+    }));
+  },
+
+  setStepMode: (enabled) => {
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        stepMode: enabled,
+      },
+    }));
+  },
+
+  updateNodeExecutionState: (nodeId, stateUpdate) => {
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        currentNodeId: stateUpdate.state === 'running' ? nodeId : state.execution.currentNodeId,
+        nodeStates: {
+          ...state.execution.nodeStates,
+          [nodeId]: {
+            ...state.execution.nodeStates[nodeId],
+            ...stateUpdate,
+          },
+        },
+      },
+    }));
+  },
+
+  addExecutionLog: (nodeId, message, level = 'info') => {
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        executionLog: [
+          ...state.execution.executionLog,
+          {
+            nodeId,
+            timestamp: Date.now(),
+            message,
+            level,
+          },
+        ],
+      },
+    }));
+  },
+
+  completeExecution: (outputs) => {
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        status: 'completed',
+        outputs,
+        currentNodeId: null,
+        endTime: Date.now(),
+      },
+    }));
+  },
+
+  resetExecution: () => {
+    set({
+      execution: initialExecutionState,
+    });
+  },
+
   // Reset
   reset: () => {
     set({
@@ -137,6 +299,8 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
       edges: [],
       flowDefinition: initialFlowDefinition,
       selectedNode: null,
+      nodeIdCounter: 0,
+      execution: initialExecutionState,
     });
   },
 }));

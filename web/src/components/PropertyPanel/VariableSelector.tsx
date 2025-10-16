@@ -7,6 +7,7 @@ interface VariableSelectorProps {
   placeholder?: string;
   className?: string;
   currentNodeId?: string; // Exclude this node from suggestions
+  disabled?: boolean;
 }
 
 interface Variable {
@@ -22,6 +23,7 @@ export default function VariableSelector({
   placeholder = '${inputs.name} or ${step_id.output}',
   className = '',
   currentNodeId,
+  disabled = false,
 }: VariableSelectorProps) {
   const { flowDefinition, nodes } = useFlowStore();
   const [showDropdown, setShowDropdown] = useState(false);
@@ -132,13 +134,15 @@ export default function VariableSelector({
           value={value}
           onChange={handleInputChange}
           onFocus={handleInputFocus}
-          className={`w-full px-2 py-1 pr-8 text-xs font-mono border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${className}`}
+          disabled={disabled}
+          className={`w-full px-2 py-1 pr-8 text-xs font-mono border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-100 ${className}`}
           placeholder={placeholder}
         />
         <button
           type="button"
           onClick={() => setShowDropdown(!showDropdown)}
-          className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-700 rounded hover:bg-gray-100"
+          disabled={disabled}
+          className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-700 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
           title="Show available variables"
         >
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

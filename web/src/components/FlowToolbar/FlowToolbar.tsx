@@ -3,16 +3,18 @@ import { flowToYaml, yamlToFlow, validateYaml } from '../../services/yamlConvert
 import { useRef, useState } from 'react';
 import FlowSettingsModal from '../FlowSettings/FlowSettingsModal';
 import YAMLPreviewModal from '../YAMLPreviewModal/YAMLPreviewModal';
+import ExecutionResultsPanel from '../ExecutionResultsPanel/ExecutionResultsPanel';
 
 interface FlowToolbarProps {
   onShowKeyboardHelp?: () => void;
 }
 
 export default function FlowToolbar({ onShowKeyboardHelp }: FlowToolbarProps) {
-  const { flowDefinition, reset, nodes, edges, setNodes, setEdges, setFlowDefinition } = useFlowStore();
+  const { flowDefinition, reset, nodes, edges, setNodes, setEdges, setFlowDefinition, execution } = useFlowStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showYAMLModal, setShowYAMLModal] = useState(false);
+  const [showResultsPanel, setShowResultsPanel] = useState(false);
 
   const handleNew = () => {
     if (confirm('Create new flow? Current progress will be lost.')) {
@@ -77,6 +79,7 @@ export default function FlowToolbar({ onShowKeyboardHelp }: FlowToolbarProps) {
     // TODO: Implement save to server
     alert('Save to server coming soon!');
   };
+
 
   return (
     <div className="bg-white border-b border-gray-200 px-4 py-3">
@@ -260,6 +263,24 @@ export default function FlowToolbar({ onShowKeyboardHelp }: FlowToolbarProps) {
           >
             Export YAML
           </button>
+
+          {/* View Results Button - shows when execution has started */}
+          {execution.status !== 'idle' && (
+            <>
+              <div className="h-6 w-px bg-gray-300" />
+              <button
+                onClick={() => setShowResultsPanel(true)}
+                className="px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 flex items-center gap-1.5"
+                title="View execution results"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+                Results
+              </button>
+            </>
+          )}
+
           <button
             onClick={handleSave}
             className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
@@ -278,6 +299,12 @@ export default function FlowToolbar({ onShowKeyboardHelp }: FlowToolbarProps) {
         onClose={() => setShowYAMLModal(false)}
         title="Complete Flow YAML"
         yamlContent={flowToYaml(nodes, edges, flowDefinition)}
+      />
+
+      {/* Execution Results Panel */}
+      <ExecutionResultsPanel
+        isOpen={showResultsPanel}
+        onClose={() => setShowResultsPanel(false)}
       />
     </div>
   );

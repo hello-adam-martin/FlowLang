@@ -63,6 +63,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
     onConnect,
     setSelectedNode,
     addNode,
+    execution,
   } = useFlowStore();
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -74,36 +75,17 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
   const [isPanelDragging, setIsPanelDragging] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const hasInitiallyFit = useRef(false);
-  const nodeIdCounter = useRef(0);
   const [connectionTooltip, setConnectionTooltip] = useState<{
     message: string;
     position: { x: number; y: number };
   } | null>(null);
-
-  // Initialize counter from existing nodes on mount
-  useEffect(() => {
-    const existingIds = nodes
-      .map(n => n.id)
-      .filter(id => id.startsWith('node_'))
-      .map(id => parseInt(id.replace('node_', ''), 10))
-      .filter(num => !isNaN(num));
-
-    if (existingIds.length > 0) {
-      nodeIdCounter.current = Math.max(...existingIds) + 1;
-    }
-  }, []);
-
-  // Generate unique node ID using ref counter
-  const getNodeId = useCallback(() => {
-    return `node_${nodeIdCounter.current++}`;
-  }, []);
 
   // Fit view only on initial load when importing a flow (multiple nodes at once)
   useEffect(() => {
     if (reactFlowInstance.current && !hasInitiallyFit.current && nodes.length > 0) {
       // Only fit view if we're loading multiple nodes at once (e.g., from import)
       // Don't fit view when adding nodes one by one
-      if (nodes.length >= 3) {
+      if (nodes.length >= 5) { // Increased threshold to avoid auto-fit when manually adding nodes
         reactFlowInstance.current.fitView({ maxZoom: 1, duration: 200 });
         hasInitiallyFit.current = true;
       }
@@ -113,14 +95,21 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: any) => {
       setSelectedNode(node.id);
+      // Close the node library panel when a node is clicked
+      onNodeCreated?.();
     },
-    [setSelectedNode]
+    [setSelectedNode, onNodeCreated]
   );
 
   const onPaneClick = useCallback(() => {
-    setSelectedNode(null);
+    // Don't close the property panel if execution is running or paused
+    if (execution.status === 'idle' || execution.status === 'completed' || execution.status === 'error') {
+      setSelectedNode(null);
+    }
     setConnectionTooltip(null); // Clear tooltip when clicking pane
-  }, [setSelectedNode]);
+    // Close the node library panel when clicking on canvas
+    onNodeCreated?.();
+  }, [setSelectedNode, onNodeCreated, execution.status]);
 
 
   const onMoveStart = useCallback(() => {
@@ -188,7 +177,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
   // Get validation message for a connection attempt (returns null if valid)
   const getConnectionValidationMessage = useCallback(
     (connection: any): string | null => {
-      const { source, target, sourceHandle, targetHandle } = connection;
+      const { source, target } = connection;
 
       // Rule 1: Node cannot connect to itself
       if (source === target) {
@@ -204,22 +193,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
         return 'Connection already exists between these nodes';
       }
 
-      // Rule 3: Check if source handle is already used as a target
-      const sourceHandleUsedAsTarget = edges.some(
-        edge => edge.target === source && edge.targetHandle === sourceHandle
-      );
-
-      // Rule 4: Check if target handle is already used as a source
-      const targetHandleUsedAsSource = edges.some(
-        edge => edge.source === target && edge.sourceHandle === targetHandle
-      );
-
-      // Reject connection if handle is already locked to the opposite direction
-      if (sourceHandleUsedAsTarget || targetHandleUsedAsSource) {
-        return 'This handle is already connected in the opposite direction';
-      }
-
-      // Rule 5: Nodes inside a container cannot connect to nodes outside the container
+      // Rule 3: Nodes inside a container cannot connect to nodes outside the container
       const sourceNode = nodes.find(n => n.id === source);
       const targetNode = nodes.find(n => n.id === target);
 
@@ -606,7 +580,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
         }
       }
 
-      const nodeId = getNodeId();
+      const nodeId = useFlowStore.getState().getNextNodeId();
 
       // Build step data for task nodes
       let stepData: any = undefined;
@@ -677,13 +651,46 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
 
       addNode(newNode);
 
+      // Automatically connect first task to Start node if Start node has no outgoing connections
+      if (type === 'task' && !parentId) {
+        // Get the latest state from the store to avoid stale closure
+        const currentEdges = useFlowStore.getState().edges;
+        const startNode = nodes.find(n => n.type === 'start');
+
+        if (startNode) {
+          // Check if Start node has any outgoing connections
+          const startHasConnection = currentEdges.some(e => e.source === startNode.id);
+
+          console.log('[FlowDesigner] Auto-connect check:', {
+            nodeId,
+            startNodeId: startNode.id,
+            currentEdgesCount: currentEdges.length,
+            startHasConnection,
+            willAutoConnect: !startHasConnection
+          });
+
+          if (!startHasConnection) {
+            // Auto-connect Start to this new task (after a brief delay to ensure node is added)
+            setTimeout(() => {
+              console.log('[FlowDesigner] Creating auto-connection');
+              onConnect({
+                source: startNode.id,
+                sourceHandle: 'output',
+                target: nodeId,
+                targetHandle: 'input',
+              });
+            }, 10);
+          }
+        }
+      }
+
       // Automatically select the newly created node to show its properties
       setSelectedNode(nodeId);
 
       // Close the node library panel
       onNodeCreated?.();
     },
-    [addNode, nodes, setSelectedNode, onNodeCreated]
+    [addNode, nodes, onConnect, setSelectedNode, onNodeCreated]
   );
 
   // Add selected styling to edges
@@ -729,13 +736,14 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
         edgeTypes={edgeTypes}
         connectionMode="loose"
         isValidConnection={isValidConnection}
+        connectionLineStyle={{ stroke: '#e5e7eb', strokeWidth: 1.5 }}
         defaultEdgeOptions={{
           type: 'smoothstep',
           animated: false,
-          style: { stroke: '#94a3b8', strokeWidth: 2 },
+          style: { stroke: '#e5e7eb', strokeWidth: 1.5 },
           markerEnd: {
             type: 'arrowclosed',
-            color: '#94a3b8',
+            color: '#e5e7eb',
             width: 20,
             height: 20,
           },
