@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { FlowNodeData } from '../../types/node';
 
 function NoteNode({ data, selected }: NodeProps<FlowNodeData>) {
