@@ -77,7 +77,7 @@ function App() {
 
     // Helper function to get node dimensions
     const getNodeDimensions = (node: any) => {
-      if (node.type === 'start') return { width: 180, height: 90 };
+      if (node.type === 'start') return { width: 180, height: 100 };
       if (node.type === 'conditionalContainer' || node.type === 'switchContainer') return { width: 600, height: 300 };
       if (node.type === 'parallelContainer') return { width: 450, height: 150 };
       if (node.type === 'loopContainer') return { width: 450, height: 195 };
