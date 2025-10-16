@@ -482,8 +482,8 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
         nodeWidth = 160;
         nodeHeight = 60;
       } else if (type === 'note') {
-        nodeWidth = 200;
-        nodeHeight = 150;
+        nodeWidth = 150;
+        nodeHeight = 80;
       } else if (type === 'conditionalContainer' || type === 'switchContainer') {
         nodeWidth = 600;
         nodeHeight = 300;

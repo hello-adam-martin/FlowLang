@@ -5,6 +5,7 @@ import PropertyPanel from './components/PropertyPanel/PropertyPanel';
 import FlowToolbar from './components/FlowToolbar/FlowToolbar';
 import FlowManager from './components/FlowManager/FlowManager';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp/KeyboardShortcutsHelp';
+import ExecutionHistoryView from './components/ExecutionHistoryView/ExecutionHistoryView';
 import { useFlowStore, initialExecutionState } from './store/flowStore';
 import { useProjectStore } from './store/projectStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -12,13 +13,17 @@ import type { FlowNodeType } from './types/node';
 import { flowToYaml } from './services/yamlConverter';
 import './index.css';
 
+type ViewMode = 'designer' | 'history';
+
 function App() {
+  const [viewMode, setViewMode] = useState<ViewMode>('designer');
+  const [selectedHistoryExecution, setSelectedHistoryExecution] = useState<string | null>(null);
   const [showNodeLibrary, setShowNodeLibrary] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [showFlowManager, setShowFlowManager] = useState(true);
   const selectedNode = useFlowStore((state) => state.selectedNode);
-  const { nodes, edges, flowDefinition, addNode, onConnect, setNodes, setEdges, setFlowDefinition, setExecution } = useFlowStore();
-  const { project, getCurrentFlow, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition, loadFromStorage } = useProjectStore();
+  const { nodes, edges, flowDefinition, executionHistory, addNode, onConnect, setNodes, setEdges, setFlowDefinition, setExecution, setExecutionHistory } = useFlowStore();
+  const { project, getCurrentFlow, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition, updateFlowExecutionHistory, loadFromStorage } = useProjectStore();
   const reactFlowInstanceRef = useRef<any>(null);
 
   // Load project from localStorage on mount
@@ -35,8 +40,10 @@ function App() {
       setFlowDefinition(currentFlow.flowDefinition);
       // Restore execution state if it exists, otherwise reset to idle
       setExecution(currentFlow.execution || initialExecutionState);
+      // Restore execution history if it exists
+      setExecutionHistory(currentFlow.executionHistory || []);
     }
-  }, [project.currentFlowId, getCurrentFlow, setNodes, setEdges, setFlowDefinition, setExecution]);
+  }, [project.currentFlowId, getCurrentFlow, setNodes, setEdges, setFlowDefinition, setExecution, setExecutionHistory]);
 
   // Sync changes from flowStore back to projectStore (debounced)
   useEffect(() => {
@@ -47,10 +54,11 @@ function App() {
       updateFlowNodes(currentFlowId, nodes);
       updateFlowEdges(currentFlowId, edges);
       updateFlowDefinition(currentFlowId, flowDefinition);
+      updateFlowExecutionHistory(currentFlowId, executionHistory);
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeout);
-  }, [nodes, edges, flowDefinition, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition]);
+  }, [nodes, edges, flowDefinition, executionHistory, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition, updateFlowExecutionHistory]);
 
   // Show properties panel when a node is selected (but not for note nodes)
   const showProperties = selectedNode !== null && (() => {
@@ -77,8 +85,8 @@ function App() {
       nodeWidth = 160;
       nodeHeight = 60;
     } else if (nodeType === 'note') {
-      nodeWidth = 200;
-      nodeHeight = 150;
+      nodeWidth = 150;
+      nodeHeight = 80;
     }
 
     // Helper function to get node dimensions
@@ -88,7 +96,7 @@ function App() {
       if (node.type === 'parallelContainer') return { width: 450, height: 150 };
       if (node.type === 'loopContainer') return { width: 450, height: 195 };
       if (node.type === 'exit') return { width: 160, height: 60 };
-      if (node.type === 'note') return { width: 200, height: 150 };
+      if (node.type === 'note') return { width: 150, height: 80 };
       return { width: 200, height: 80 };
     };
 
@@ -305,62 +313,70 @@ function App() {
         onShowKeyboardHelp={() => setShowKeyboardHelp(true)}
         onToggleFlowManager={() => setShowFlowManager(!showFlowManager)}
         showFlowManager={showFlowManager}
+        viewMode={viewMode}
+        onToggleViewMode={() => setViewMode(viewMode === 'designer' ? 'history' : 'designer')}
       />
 
       {/* Main content area */}
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Left sidebar - Flow Manager */}
-        {showFlowManager && (
-          <FlowManager
-            isOpen={showFlowManager}
-            onClose={() => setShowFlowManager(false)}
-          />
-        )}
+      {viewMode === 'designer' ? (
+        <div className="flex flex-1 overflow-hidden relative">
+          {/* Left sidebar - Flow Manager */}
+          {showFlowManager && (
+            <FlowManager
+              isOpen={showFlowManager}
+              onClose={() => setShowFlowManager(false)}
+            />
+          )}
 
-        {/* Add Node Button */}
-        <button
-          onClick={() => setShowNodeLibrary(!showNodeLibrary)}
-          className="absolute top-4 right-4 z-10 w-14 h-14 bg-white rounded-lg shadow-lg border border-gray-200 flex items-center justify-center hover:bg-blue-50 hover:border-blue-400 transition-all"
-          title="Add Node"
-        >
-          <span className="text-2xl font-semibold text-gray-700">+</span>
-        </button>
+          {/* Add Node Button */}
+          <button
+            onClick={() => setShowNodeLibrary(!showNodeLibrary)}
+            className="absolute top-4 right-4 z-10 w-14 h-14 bg-white rounded-lg shadow-lg border border-gray-200 flex items-center justify-center hover:bg-blue-50 hover:border-blue-400 transition-all"
+            title="Add Node"
+          >
+            <span className="text-2xl font-semibold text-gray-700">+</span>
+          </button>
 
-        {/* Sliding Node Library Panel - Right Side */}
-        <div
-          className={`absolute top-0 right-0 h-full w-120 bg-white border-l border-gray-200 shadow-xl z-20 transform transition-transform duration-300 ease-in-out ${
-            showNodeLibrary ? 'translate-x-0' : 'translate-x-full'
-          }`}
-        >
-          <div className="flex items-center justify-between p-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">What happens next?</h2>
-            <button
-              onClick={() => setShowNodeLibrary(false)}
-              className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
-            >
-              ×
-            </button>
+          {/* Sliding Node Library Panel - Right Side */}
+          <div
+            className={`absolute top-0 right-0 h-full w-120 bg-white border-l border-gray-200 shadow-xl z-20 transform transition-transform duration-300 ease-in-out ${
+              showNodeLibrary ? 'translate-x-0' : 'translate-x-full'
+            }`}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">What happens next?</h2>
+              <button
+                onClick={() => setShowNodeLibrary(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <div className="overflow-y-auto h-[calc(100%-4rem)]">
+              <NodeLibrary />
+            </div>
           </div>
-          <div className="overflow-y-auto h-[calc(100%-4rem)]">
-            <NodeLibrary />
+
+          {/* Center - Flow Designer */}
+          <div className="flex-1">
+            <FlowDesigner
+              onNodeCreated={() => setShowNodeLibrary(false)}
+              reactFlowInstanceRef={reactFlowInstanceRef}
+            />
           </div>
+
+          {/* Right sidebar - Property Panel (hidden by default) */}
+          {showProperties && (
+            <div className="w-120 h-full bg-white border-l border-gray-200 overflow-y-auto z-30">
+              <PropertyPanel />
+            </div>
+          )}
         </div>
-
-        {/* Center - Flow Designer */}
-        <div className="flex-1">
-          <FlowDesigner
-            onNodeCreated={() => setShowNodeLibrary(false)}
-            reactFlowInstanceRef={reactFlowInstanceRef}
-          />
+      ) : (
+        <div className="flex-1 overflow-hidden">
+          <ExecutionHistoryView onClose={() => setViewMode('designer')} />
         </div>
-
-        {/* Right sidebar - Property Panel (hidden by default) */}
-        {showProperties && (
-          <div className="w-120 h-full bg-white border-l border-gray-200 overflow-y-auto z-30">
-            <PropertyPanel />
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Keyboard Shortcuts Help Modal */}
       <KeyboardShortcutsHelp

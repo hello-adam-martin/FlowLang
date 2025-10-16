@@ -1,6 +1,7 @@
 import type { Node, Edge } from '@xyflow/react';
 import type { FlowNodeData } from './node';
 import type { FlowDefinition } from './flow';
+import type { ExecutionHistoryEntry } from './execution';
 
 /**
  * Metadata for a single flow within a project
@@ -55,6 +56,7 @@ export interface FlowData {
   edges: Edge[];
   flowDefinition: FlowDefinition;
   execution?: ExecutionState;
+  executionHistory?: ExecutionHistoryEntry[];
 }
 
 /**

@@ -9,10 +9,12 @@ interface FlowToolbarProps {
   onShowKeyboardHelp?: () => void;
   onToggleFlowManager?: () => void;
   showFlowManager?: boolean;
+  viewMode?: 'designer' | 'history';
+  onToggleViewMode?: () => void;
 }
 
-export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, showFlowManager }: FlowToolbarProps) {
-  const { flowDefinition, reset, nodes, edges, setNodes, setEdges, setFlowDefinition, execution } = useFlowStore();
+export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, showFlowManager, viewMode = 'designer', onToggleViewMode }: FlowToolbarProps) {
+  const { flowDefinition, reset, nodes, edges, setNodes, setEdges, setFlowDefinition, execution, executionHistory } = useFlowStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showYAMLModal, setShowYAMLModal] = useState(false);
@@ -248,31 +250,37 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Flow Settings Button */}
-          <button
-            onClick={() => setShowSettings(true)}
-            className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5 transition-colors"
-            title="Flow Settings"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
+          {/* Designer-only buttons */}
+          {viewMode === 'designer' && (
+            <>
+              {/* Flow Settings Button */}
+              <button
+                onClick={() => setShowSettings(true)}
+                className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5 transition-colors"
+                title="Flow Settings"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
 
-          {onShowKeyboardHelp && (
-            <button
-              onClick={onShowKeyboardHelp}
-              className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
-              title="Keyboard shortcuts (press ?)"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-              </svg>
-              <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-xs font-semibold text-gray-700 bg-gray-100 border border-gray-300 rounded">?</kbd>
-            </button>
+              {onShowKeyboardHelp && (
+                <button
+                  onClick={onShowKeyboardHelp}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5"
+                  title="Keyboard shortcuts (press ?)"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                  </svg>
+                  <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-xs font-semibold text-gray-700 bg-gray-100 border border-gray-300 rounded">?</kbd>
+                </button>
+              )}
+            </>
           )}
-          {/* YAML Actions - Dropdown Button */}
+          {/* YAML Actions - Dropdown Button (designer only) */}
+          {viewMode === 'designer' && (
           <div className="relative">
             <button
               onClick={() => setShowYAMLMenu(!showYAMLMenu)}
@@ -369,9 +377,10 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
               </>
             )}
           </div>
+          )}
 
-          {/* View Results Button - shows when execution has started */}
-          {execution.status !== 'idle' && (
+          {/* View Results Button - shows when execution has started (designer only) */}
+          {viewMode === 'designer' && execution.status !== 'idle' && (
             <>
               <div className="h-6 w-px bg-gray-300" />
               <button
@@ -387,31 +396,70 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
             </>
           )}
 
-          <button
-            onClick={handleSave}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-          >
-            Save
-          </button>
+          {/* History Button - toggles history view mode */}
+          {viewMode === 'designer' && executionHistory.length > 0 && onToggleViewMode && (
+            <button
+              onClick={onToggleViewMode}
+              className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center gap-1.5 relative"
+              title="View execution history"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              History
+              <span className="px-1.5 py-0.5 text-xs font-semibold bg-gray-200 text-gray-700 rounded-full">
+                {executionHistory.length}
+              </span>
+            </button>
+          )}
+
+          {/* Back to Designer Button - shows in history mode */}
+          {viewMode === 'history' && onToggleViewMode && (
+            <button
+              onClick={onToggleViewMode}
+              className="px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 flex items-center gap-1.5"
+              title="Back to Designer"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back to Designer
+            </button>
+          )}
+
+          {/* Save button - designer only */}
+          {viewMode === 'designer' && (
+            <button
+              onClick={handleSave}
+              className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+            >
+              Save
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Flow Settings Modal */}
-      <FlowSettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      {/* Designer-only modals */}
+      {viewMode === 'designer' && (
+        <>
+          {/* Flow Settings Modal */}
+          <FlowSettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
-      {/* YAML Preview Modal */}
-      <YAMLPreviewModal
-        isOpen={showYAMLModal}
-        onClose={() => setShowYAMLModal(false)}
-        title="Complete Flow YAML"
-        yamlContent={flowToYaml(nodes, edges, flowDefinition)}
-      />
+          {/* YAML Preview Modal */}
+          <YAMLPreviewModal
+            isOpen={showYAMLModal}
+            onClose={() => setShowYAMLModal(false)}
+            title="Complete Flow YAML"
+            yamlContent={flowToYaml(nodes, edges, flowDefinition)}
+          />
 
-      {/* Execution Results Panel */}
-      <ExecutionResultsPanel
-        isOpen={showResultsPanel}
-        onClose={() => setShowResultsPanel(false)}
-      />
+          {/* Execution Results Panel */}
+          <ExecutionResultsPanel
+            isOpen={showResultsPanel}
+            onClose={() => setShowResultsPanel(false)}
+          />
+        </>
+      )}
     </div>
   );
 }

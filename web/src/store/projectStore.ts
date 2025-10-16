@@ -24,6 +24,7 @@ interface ProjectStore {
   updateFlowNodes: (flowId: string, nodes: Node<FlowNodeData>[]) => void;
   updateFlowEdges: (flowId: string, edges: Edge[]) => void;
   updateFlowDefinition: (flowId: string, definition: Partial<FlowDefinition>) => void;
+  updateFlowExecutionHistory: (flowId: string, history: any[]) => void;
 
   // Current flow helpers
   getCurrentFlow: () => FlowData | null;
@@ -388,6 +389,32 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           metadata: {
             ...state.project.metadata,
             modified: Date.now(),
+          },
+        },
+      };
+    });
+
+    get().saveToStorage();
+  },
+
+  updateFlowExecutionHistory: (flowId, history) => {
+    set((state) => {
+      const flow = state.project.flows[flowId];
+      if (!flow) return state;
+
+      return {
+        project: {
+          ...state.project,
+          flows: {
+            ...state.project.flows,
+            [flowId]: {
+              ...flow,
+              executionHistory: history,
+              metadata: {
+                ...flow.metadata,
+                modified: Date.now(),
+              },
+            },
           },
         },
       };
