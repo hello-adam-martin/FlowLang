@@ -754,7 +754,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
         snapGrid={[15, 15]}
         attributionPosition="bottom-left"
       >
-        <Controls />
+        <Controls position="bottom-right" />
         <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
         {isPanning && <MiniMap position="bottom-left" />}
       </ReactFlow>
