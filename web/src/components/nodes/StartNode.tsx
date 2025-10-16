@@ -68,10 +68,13 @@ const StartNode = memo(({ id, data, selected }: NodeProps<FlowNodeData>) => {
   return (
     <>
       <div
-        className={`rounded-xl border transition-all shadow-sm bg-white overflow-hidden ${
+        className={`rounded-xl border transition-all shadow-sm bg-white overflow-hidden flex flex-col ${
           selected ? 'border-blue-500 ring-2 ring-blue-300 shadow-md' : 'border-gray-200'
         }`}
-        style={{ minWidth: '180px' }}
+        style={{
+          width: '180px',
+          height: triggers.length > 0 ? '135px' : '90px'
+        }}
       >
         {/* Output handle (right side) with quick connect */}
         <QuickConnectHandle
@@ -81,7 +84,7 @@ const StartNode = memo(({ id, data, selected }: NodeProps<FlowNodeData>) => {
         />
 
         {/* Start Section - at top */}
-        <div className="px-3 py-2 bg-gray-50">
+        <div className="px-3 py-2 bg-gray-50 flex-shrink-0">
           <div className="flex items-center justify-center">
             <span className="text-xs font-medium text-gray-700">Start</span>
           </div>
@@ -89,7 +92,7 @@ const StartNode = memo(({ id, data, selected }: NodeProps<FlowNodeData>) => {
 
         {/* Triggers Section - only show if triggers are configured */}
         {triggers.length > 0 && (
-          <div className="px-3 py-2 border-t border-gray-200 bg-blue-50">
+          <div className="px-3 py-2 border-t border-gray-200 bg-blue-50 flex-1 overflow-hidden">
             <div className="flex items-start gap-2">
               <span className="text-xs text-blue-600">🌐</span>
               <div className="flex-1 min-w-0">
@@ -118,7 +121,7 @@ const StartNode = memo(({ id, data, selected }: NodeProps<FlowNodeData>) => {
         <button
           onClick={handleSimulate}
           disabled={buttonState.disabled}
-          className={`w-full px-3 py-2 text-white font-medium text-xs flex items-center justify-center gap-2 transition-all border-t border-gray-200 ${buttonState.bgColor} ${buttonState.hoverColor} disabled:opacity-70 disabled:cursor-not-allowed`}
+          className={`w-full px-3 py-2 text-white font-medium text-xs flex items-center justify-center gap-2 transition-all border-t border-gray-200 flex-shrink-0 ${buttonState.bgColor} ${buttonState.hoverColor} disabled:opacity-70 disabled:cursor-not-allowed`}
         >
           <span className="text-sm">{buttonState.icon}</span>
           <span>{buttonState.label}</span>
