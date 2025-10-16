@@ -343,8 +343,8 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
   // Helper function to constrain node position within container with padding
   const constrainPositionWithinContainer = useCallback(
     (position: { x: number; y: number }, containerNode: any, nodeWidth: number = 200, nodeHeight: number = 80) => {
-      // Container-specific padding (15px to match grid)
-      const padding = 15;
+      // Container-specific padding (30px to ensure snap-to-grid doesn't override)
+      const padding = 30;
 
       // Get container dimensions
       const containerElement = document.querySelector(`[data-id="${containerNode.id}"]`);
@@ -378,8 +378,8 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
     (changes: any[]) => {
       // Process position changes to apply padding constraints
       const constrainedChanges = changes.map(change => {
-        // Only process position changes for nodes with a parent
-        if (change.type === 'position' && change.position && change.dragging) {
+        // Process position changes for nodes with a parent (both during and after dragging)
+        if (change.type === 'position' && change.position) {
           const node = nodes.find(n => n.id === change.id);
           if (node?.parentId) {
             const parentNode = nodes.find(n => n.id === node.parentId);
