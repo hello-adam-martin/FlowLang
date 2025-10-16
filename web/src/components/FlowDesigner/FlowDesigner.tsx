@@ -492,7 +492,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
         nodeHeight = 150;
       } else {
         // loopContainer
-        nodeWidth = 450;
+        nodeWidth = 250;
         nodeHeight = 150;
       }
 

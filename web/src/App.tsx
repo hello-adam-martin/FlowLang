@@ -79,7 +79,7 @@ function App() {
       nodeWidth = 450;
       nodeHeight = 150;
     } else if (nodeType === 'loopContainer') {
-      nodeWidth = 450;
+      nodeWidth = 250;
       nodeHeight = 150;
     } else if (nodeType === 'exit') {
       nodeWidth = 160;
@@ -94,7 +94,7 @@ function App() {
       if (node.type === 'start') return { width: 180, height: 100 };
       if (node.type === 'conditionalContainer' || node.type === 'switchContainer') return { width: 600, height: 300 };
       if (node.type === 'parallelContainer') return { width: 450, height: 150 };
-      if (node.type === 'loopContainer') return { width: 450, height: 150 };
+      if (node.type === 'loopContainer') return { width: 250, height: 150 };
       if (node.type === 'exit') return { width: 160, height: 60 };
       if (node.type === 'note') return { width: 150, height: 80 };
       return { width: 200, height: 80 };

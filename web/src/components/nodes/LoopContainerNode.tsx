@@ -13,6 +13,21 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
   const resizeStartRef = useRef<{ width: number; height: number; mouseX: number; mouseY: number } | null>(null);
   const didResizeRef = useRef(false);
 
+  // Store the original size when first rendered (only once)
+  const originalSizeRef = useRef<{ width: number; height: number } | null>(null);
+
+  // Capture original size on first render
+  if (!originalSizeRef.current) {
+    const nodeElement = document.querySelector(`[data-id="${id}"]`) as HTMLElement;
+    if (nodeElement) {
+      const rect = nodeElement.getBoundingClientRect();
+      originalSizeRef.current = { width: rect.width, height: rect.height };
+    } else {
+      // Fallback to default sizes
+      originalSizeRef.current = { width: 250, height: 150 };
+    }
+  }
+
   // Find child nodes - use useMemo to recalculate when nodes change
   const childNodes = useMemo(() => {
     return getNodes().filter((n) => n.parentId === id);
@@ -58,7 +73,7 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
 
     // Get the actual rendered dimensions from the DOM
     const nodeElement = document.querySelector(`[data-id="${id}"]`) as HTMLElement;
-    let currentWidth = 450;
+    let currentWidth = 250;
     let currentHeight = 150;
 
     if (nodeElement) {
@@ -68,7 +83,7 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
       currentHeight = rect.height;
     } else {
       // Fallback to node properties if DOM element not found
-      currentWidth = node.width ?? node.measured?.width ?? 450;
+      currentWidth = node.width ?? node.measured?.width ?? 250;
       currentHeight = node.height ?? node.measured?.height ?? 150;
     }
 
@@ -101,11 +116,11 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
       let newHeight = resizeStartRef.current.height;
 
       if (direction === 'right') {
-        // Only allow making it bigger, not smaller than the starting size
-        newWidth = Math.max(resizeStartRef.current.width, resizeStartRef.current.width + deltaX);
+        // Allow resizing, but not smaller than the original size
+        newWidth = Math.max(originalSizeRef.current?.width ?? 250, resizeStartRef.current.width + deltaX);
       } else if (direction === 'bottom') {
-        // Only allow making it taller, not shorter than the starting size
-        newHeight = Math.max(resizeStartRef.current.height, resizeStartRef.current.height + deltaY);
+        // Allow resizing, but not smaller than the original size
+        newHeight = Math.max(originalSizeRef.current?.height ?? 150, resizeStartRef.current.height + deltaY);
       }
 
       setNodes((nodes) =>
