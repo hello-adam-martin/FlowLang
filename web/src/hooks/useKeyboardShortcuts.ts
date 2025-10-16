@@ -79,6 +79,10 @@ export function useKeyboardShortcuts(options: KeyboardShortcutsOptions) {
             event.preventDefault();
             onCreateNode('exit');
             break;
+          case 'a':
+            event.preventDefault();
+            onCreateNode('note');
+            break;
           case '?':
             event.preventDefault();
             onShowHelp();

@@ -27,6 +27,7 @@ const shortcutSections: ShortcutSection[] = [
       { keys: ['W'], description: 'Create Switch node' },
       { keys: ['S'], description: 'Create Subflow node' },
       { keys: ['E'], description: 'Create Exit node' },
+      { keys: ['A'], description: 'Create Note (annotation)' },
     ],
   },
   {
