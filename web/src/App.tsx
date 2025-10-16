@@ -1,10 +1,12 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import FlowDesigner from './components/FlowDesigner/FlowDesigner';
 import NodeLibrary from './components/NodeLibrary/NodeLibrary';
 import PropertyPanel from './components/PropertyPanel/PropertyPanel';
 import FlowToolbar from './components/FlowToolbar/FlowToolbar';
+import FlowManager from './components/FlowManager/FlowManager';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp/KeyboardShortcutsHelp';
 import { useFlowStore } from './store/flowStore';
+import { useProjectStore } from './store/projectStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import type { FlowNodeType } from './types/node';
 import { flowToYaml } from './services/yamlConverter';
@@ -13,9 +15,40 @@ import './index.css';
 function App() {
   const [showNodeLibrary, setShowNodeLibrary] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [showFlowManager, setShowFlowManager] = useState(false);
   const selectedNode = useFlowStore((state) => state.selectedNode);
-  const { nodes, edges, flowDefinition, addNode, onConnect } = useFlowStore();
+  const { nodes, edges, flowDefinition, addNode, onConnect, setNodes, setEdges, setFlowDefinition } = useFlowStore();
+  const { project, getCurrentFlow, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition, loadFromStorage } = useProjectStore();
   const reactFlowInstanceRef = useRef<any>(null);
+
+  // Load project from localStorage on mount
+  useEffect(() => {
+    loadFromStorage();
+  }, [loadFromStorage]);
+
+  // Sync flowStore with current flow from projectStore
+  useEffect(() => {
+    const currentFlow = getCurrentFlow();
+    if (currentFlow) {
+      setNodes(currentFlow.nodes);
+      setEdges(currentFlow.edges);
+      setFlowDefinition(currentFlow.flowDefinition);
+    }
+  }, [project.currentFlowId, getCurrentFlow, setNodes, setEdges, setFlowDefinition]);
+
+  // Sync changes from flowStore back to projectStore (debounced)
+  useEffect(() => {
+    const currentFlowId = getCurrentFlowId();
+    if (!currentFlowId) return;
+
+    const timeout = setTimeout(() => {
+      updateFlowNodes(currentFlowId, nodes);
+      updateFlowEdges(currentFlowId, edges);
+      updateFlowDefinition(currentFlowId, flowDefinition);
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeout);
+  }, [nodes, edges, flowDefinition, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition]);
 
   // Show properties panel when a node is selected
   const showProperties = selectedNode !== null;
@@ -208,6 +241,40 @@ function App() {
     }
   }, []);
 
+  // Handle flow navigation
+  const handleNextFlow = useCallback(() => {
+    const flowIds = Object.keys(project.flows).sort((a, b) => {
+      return project.flows[b].metadata.modified - project.flows[a].metadata.modified;
+    });
+    const currentIndex = flowIds.indexOf(project.currentFlowId || '');
+    if (currentIndex !== -1 && currentIndex < flowIds.length - 1) {
+      const nextFlowId = flowIds[currentIndex + 1];
+      const { switchFlow } = useProjectStore.getState();
+      switchFlow(nextFlowId);
+    }
+  }, [project.flows, project.currentFlowId]);
+
+  const handlePreviousFlow = useCallback(() => {
+    const flowIds = Object.keys(project.flows).sort((a, b) => {
+      return project.flows[b].metadata.modified - project.flows[a].metadata.modified;
+    });
+    const currentIndex = flowIds.indexOf(project.currentFlowId || '');
+    if (currentIndex > 0) {
+      const prevFlowId = flowIds[currentIndex - 1];
+      const { switchFlow } = useProjectStore.getState();
+      switchFlow(prevFlowId);
+    }
+  }, [project.flows, project.currentFlowId]);
+
+  const handleNewFlow = useCallback(() => {
+    setShowFlowManager(true);
+    // Small delay to ensure FlowManager is visible
+    setTimeout(() => {
+      // The FlowManager will handle showing the new flow modal
+      // We could potentially expose a method to trigger it directly
+    }, 100);
+  }, []);
+
   // Set up keyboard shortcuts
   useKeyboardShortcuts({
     onCreateNode: handleCreateNode,
@@ -216,15 +283,31 @@ function App() {
     onExportYaml: handleExportYaml,
     onImportYaml: handleImportYaml,
     onFitView: handleFitView,
+    onToggleFlowManager: () => setShowFlowManager(prev => !prev),
+    onNextFlow: handleNextFlow,
+    onPreviousFlow: handlePreviousFlow,
+    onNewFlow: handleNewFlow,
   });
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Toolbar */}
-      <FlowToolbar onShowKeyboardHelp={() => setShowKeyboardHelp(true)} />
+      <FlowToolbar
+        onShowKeyboardHelp={() => setShowKeyboardHelp(true)}
+        onToggleFlowManager={() => setShowFlowManager(!showFlowManager)}
+        showFlowManager={showFlowManager}
+      />
 
       {/* Main content area */}
       <div className="flex flex-1 overflow-hidden relative">
+        {/* Left sidebar - Flow Manager */}
+        {showFlowManager && (
+          <FlowManager
+            isOpen={showFlowManager}
+            onClose={() => setShowFlowManager(false)}
+          />
+        )}
+
         {/* Add Node Button */}
         <button
           onClick={() => setShowNodeLibrary(!showNodeLibrary)}

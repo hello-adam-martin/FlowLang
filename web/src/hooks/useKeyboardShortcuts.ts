@@ -9,11 +9,27 @@ interface KeyboardShortcutsOptions {
   onExportYaml: () => void;
   onImportYaml: () => void;
   onFitView: () => void;
+  onToggleFlowManager?: () => void;
+  onNextFlow?: () => void;
+  onPreviousFlow?: () => void;
+  onNewFlow?: () => void;
   disabled?: boolean;
 }
 
 export function useKeyboardShortcuts(options: KeyboardShortcutsOptions) {
-  const { onCreateNode, onToggleNodeLibrary, onShowHelp, onExportYaml, onImportYaml, onFitView, disabled = false } = options;
+  const {
+    onCreateNode,
+    onToggleNodeLibrary,
+    onShowHelp,
+    onExportYaml,
+    onImportYaml,
+    onFitView,
+    onToggleFlowManager,
+    onNextFlow,
+    onPreviousFlow,
+    onNewFlow,
+    disabled = false
+  } = options;
 
   useEffect(() => {
     if (disabled) return;
@@ -92,11 +108,33 @@ export function useKeyboardShortcuts(options: KeyboardShortcutsOptions) {
             event.preventDefault();
             onFitView();
             break;
+          case 'b':
+            event.preventDefault();
+            onToggleFlowManager?.();
+            break;
+          case 'n':
+            event.preventDefault();
+            onNewFlow?.();
+            break;
+          case 'tab':
+            event.preventDefault();
+            onNextFlow?.();
+            break;
+        }
+      }
+
+      // Cmd/Ctrl + Shift + Key shortcuts
+      if (cmdOrCtrl && event.shiftKey) {
+        switch (event.key.toLowerCase()) {
+          case 'tab':
+            event.preventDefault();
+            onPreviousFlow?.();
+            break;
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [disabled, onCreateNode, onToggleNodeLibrary, onShowHelp, onExportYaml, onImportYaml, onFitView]);
+  }, [disabled, onCreateNode, onToggleNodeLibrary, onShowHelp, onExportYaml, onImportYaml, onFitView, onToggleFlowManager, onNextFlow, onPreviousFlow, onNewFlow]);
 }

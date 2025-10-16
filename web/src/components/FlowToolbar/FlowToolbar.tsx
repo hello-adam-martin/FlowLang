@@ -7,9 +7,11 @@ import ExecutionResultsPanel from '../ExecutionResultsPanel/ExecutionResultsPane
 
 interface FlowToolbarProps {
   onShowKeyboardHelp?: () => void;
+  onToggleFlowManager?: () => void;
+  showFlowManager?: boolean;
 }
 
-export default function FlowToolbar({ onShowKeyboardHelp }: FlowToolbarProps) {
+export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, showFlowManager }: FlowToolbarProps) {
   const { flowDefinition, reset, nodes, edges, setNodes, setEdges, setFlowDefinition, execution } = useFlowStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -93,9 +95,29 @@ export default function FlowToolbar({ onShowKeyboardHelp }: FlowToolbarProps) {
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-gray-900">
-            FlowLang Designer
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-gray-900">
+              FlowLang Designer
+            </h1>
+
+            {/* Flow Manager Toggle */}
+            {onToggleFlowManager && (
+              <button
+                onClick={onToggleFlowManager}
+                className={`p-1.5 rounded-md transition-colors ${
+                  showFlowManager
+                    ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                }`}
+                title="Toggle Flow Manager"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            )}
+          </div>
+
           <button
             onClick={() => setShowSettings(true)}
             className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-50 border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
