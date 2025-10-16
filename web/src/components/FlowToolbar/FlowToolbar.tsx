@@ -17,6 +17,7 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
   const [showSettings, setShowSettings] = useState(false);
   const [showYAMLModal, setShowYAMLModal] = useState(false);
   const [showResultsPanel, setShowResultsPanel] = useState(false);
+  const [showYAMLMenu, setShowYAMLMenu] = useState(false);
 
   const handleNew = () => {
     if (confirm('Create new flow? Current progress will be lost.')) {
@@ -80,6 +81,18 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
   const handleSave = () => {
     // TODO: Implement save to server
     alert('Save to server coming soon!');
+  };
+
+  const handleCopyYAML = () => {
+    try {
+      const yamlString = flowToYaml(nodes, edges, flowDefinition);
+      navigator.clipboard.writeText(yamlString);
+      // Could add a toast notification here
+      alert('YAML copied to clipboard!');
+      setShowYAMLMenu(false);
+    } catch (error) {
+      alert(`Copy failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
 
@@ -255,36 +268,103 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
               <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-xs font-semibold text-gray-700 bg-gray-100 border border-gray-300 rounded">?</kbd>
             </button>
           )}
-          <button
-            onClick={handleNew}
-            className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            New
-          </button>
-          <button
-            onClick={handleImport}
-            className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            Import YAML
-          </button>
-          <button
-            onClick={() => setShowYAMLModal(true)}
-            className="px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 flex items-center gap-1.5"
-            disabled={nodes.length === 0}
-            title="View complete flow YAML"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-            </svg>
-            View YAML
-          </button>
-          <button
-            onClick={handleExport}
-            className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-            disabled={nodes.length === 0}
-          >
-            Export YAML
-          </button>
+          {/* YAML Actions - Dropdown Button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowYAMLMenu(!showYAMLMenu)}
+              className="px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 flex items-center gap-2 transition-colors"
+              disabled={nodes.length === 0}
+              title="YAML Actions"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+              <span>YAML</span>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* Dropdown Menu */}
+            {showYAMLMenu && (
+              <>
+                {/* Backdrop */}
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowYAMLMenu(false)}
+                />
+
+                {/* Menu */}
+                <div className="absolute right-0 top-full mt-1 z-20 w-56 bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden">
+                  <button
+                    onClick={() => {
+                      setShowYAMLModal(true);
+                      setShowYAMLMenu(false);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    <div className="flex-1">
+                      <div className="font-medium">View YAML</div>
+                      <div className="text-xs text-gray-500">Preview in modal</div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      handleCopyYAML();
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    <div className="flex-1">
+                      <div className="font-medium">Copy to Clipboard</div>
+                      <div className="text-xs text-gray-500">Quick copy</div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      handleExport();
+                      setShowYAMLMenu(false);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <div className="flex-1">
+                      <div className="font-medium">Download File</div>
+                      <div className="text-xs text-gray-500">Export as .yaml</div>
+                    </div>
+                  </button>
+
+                  <div className="border-t border-gray-200" />
+
+                  <button
+                    onClick={() => {
+                      handleImport();
+                      setShowYAMLMenu(false);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L9 8m4-4v12" />
+                    </svg>
+                    <div className="flex-1">
+                      <div className="font-medium">Import from File</div>
+                      <div className="text-xs text-gray-500">Replace current flow</div>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* View Results Button - shows when execution has started */}
           {execution.status !== 'idle' && (
