@@ -54,9 +54,10 @@ const edgeTypes = {
 interface FlowDesignerProps {
   onNodeCreated?: () => void;
   reactFlowInstanceRef?: React.MutableRefObject<ReactFlowInstance | null>;
+  onConnectionDragEnd?: (sourceNodeId: string, sourceHandleId: string | null, position: { x: number; y: number }) => void;
 }
 
-export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: externalRef }: FlowDesignerProps) {
+export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: externalRef, onConnectionDragEnd }: FlowDesignerProps) {
   const {
     nodes,
     edges,
@@ -77,6 +78,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
   const [isPanelDragging, setIsPanelDragging] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const hasInitiallyFit = useRef(false);
+  const justOpenedNodeLibrary = useRef(false);
   const [connectionTooltip, setConnectionTooltip] = useState<{
     message: string;
     position: { x: number; y: number };
@@ -96,14 +98,30 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: any) => {
+      // Single click just selects the node visually (border highlight)
+      // but doesn't open property panel
+    },
+    []
+  );
+
+  const onNodeDoubleClick = useCallback(
+    (_event: React.MouseEvent, node: any) => {
+      // Double click opens the property panel
       setSelectedNode(node.id);
-      // Close the node library panel when a node is clicked
+      // Close the node library panel when a node is double-clicked
       onNodeCreated?.();
     },
     [setSelectedNode, onNodeCreated]
   );
 
   const onPaneClick = useCallback(() => {
+    // Don't handle pane clicks if we just opened the node library from a connection drag
+    // (this prevents the panel from immediately closing after we open it)
+    if (justOpenedNodeLibrary.current) {
+      justOpenedNodeLibrary.current = false;
+      return;
+    }
+
     // Don't close the property panel if execution is running or paused
     if (execution.status === 'idle' || execution.status === 'completed' || execution.status === 'error') {
       setSelectedNode(null);
@@ -126,9 +144,10 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
 
-    // Mark that we're in a panel drag
+    // Mark that we're in a panel drag and add body class
     if (!isPanelDragging) {
       setIsPanelDragging(true);
+      document.body.classList.add('dragging-from-panel');
     }
 
     // Convert screen coordinates to flow coordinates
@@ -294,13 +313,25 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
               }, 3000);
             }
           }
+        } else {
+          // No target node found - connection ended in open space
+          // Set flag to prevent onPaneClick from closing the panel
+          justOpenedNodeLibrary.current = true;
+          // Convert screen position to flow position and trigger callback
+          if (reactFlowInstance.current && onConnectionDragEnd) {
+            const flowPosition = reactFlowInstance.current.screenToFlowPosition({
+              x: mouseX,
+              y: mouseY,
+            });
+            onConnectionDragEnd(connecting.nodeId, connecting.handleId, flowPosition);
+          }
         }
       }
     }
 
     setConnectingFrom(null);
     connectingFromRef.current = null;
-  }, [getConnectionValidationMessage]);
+  }, [getConnectionValidationMessage, onConnectionDragEnd]);
 
   const onNodeDragStart = useCallback(
     (_event: React.MouseEvent, node: any) => {
@@ -523,6 +554,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
       event.preventDefault();
       setDragOverContainerId(null); // Clear drag-over state
       setIsPanelDragging(false); // Clear panel dragging state
+      document.body.classList.remove('dragging-from-panel'); // Remove body class
 
       const dragData = event.dataTransfer.getData('application/reactflow');
 
@@ -623,50 +655,13 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
             y: position.y - containerNodeData.position.y,
           };
 
-          // Constrain position within container with padding (unless it's a parallel container with track assignment)
-          if (containerNodeData.type !== 'parallelContainer') {
-            relativePosition = constrainPositionWithinContainer(
-              relativePosition,
-              containerNodeData,
-              nodeWidth,
-              nodeHeight
-            );
-          }
-
-          // For parallel containers, detect which track ghost is being hovered and assign trackId
-          if (containerNodeData.type === 'parallelContainer' && type === 'task') {
-            const headerHeight = 60;
-
-            // Find which track ghost element is under the cursor
-            const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
-            const trackGhostElement = elementsAtPoint.find((el) =>
-              el.getAttribute('data-track-id') !== null
-            );
-
-            if (trackGhostElement) {
-              const trackId = trackGhostElement.getAttribute('data-track-id');
-
-              // Get the container's track data to determine position
-              const containerData = containerNodeData.data as FlowNodeData;
-              const tracks = containerData.tracks || [];
-              const trackIndex = tracks.findIndex((t) => t.id === trackId);
-
-              if (trackIndex !== -1) {
-                // Snap to track ghost position (grid-aligned)
-                relativePosition = {
-                  x: 45,
-                  y: headerHeight + 15 + (trackIndex * 60) // 60 + 15 + (index * 60)
-                };
-
-                // Store trackId in position for later assignment to node data
-                (position as any).trackId = trackId;
-              }
-            } else {
-              // No track ghost detected - prevent drop
-              console.warn('Task must be dropped on a track ghost in parallel container');
-              return;
-            }
-          }
+          // Constrain position within container with padding
+          relativePosition = constrainPositionWithinContainer(
+            relativePosition,
+            containerNodeData,
+            nodeWidth,
+            nodeHeight
+          );
 
           // For conditional containers, detect which section (then/else)
           if (containerNodeData.type === 'conditionalContainer') {
@@ -736,16 +731,8 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
           label: nodeLabel,
           type,
           ...((position as any).section && { section: (position as any).section }),
-          ...((position as any).trackId && { trackId: (position as any).trackId }),
           // Add step data for task nodes
           ...(type === 'task' && stepData && { step: stepData }),
-          // Add default tracks for parallel containers
-          ...(type === 'parallelContainer' && {
-            tracks: [
-              { id: `track_${Date.now()}_1` },
-              { id: `track_${Date.now()}_2` },
-            ],
-          }),
         } as FlowNodeData,
       };
 
@@ -784,10 +771,8 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
         }
       }
 
-      // Automatically select the newly created node to show its properties
-      setSelectedNode(nodeId);
-
-      // Close the node library panel
+      // Don't auto-open property panel on drop - user needs to double-click
+      // Just close the node library panel
       onNodeCreated?.();
     },
     [addNode, nodes, onConnect, setSelectedNode, onNodeCreated, constrainPositionWithinContainer]
@@ -817,6 +802,7 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={onPaneClick}
         onInit={(instance) => {
           reactFlowInstance.current = instance as any;

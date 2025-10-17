@@ -15,28 +15,342 @@ export function yamlToFlow(yamlString: string): {
   const nodes: Node<FlowNodeData>[] = [];
   const edges: Edge[] = [];
 
-  let yPosition = 100;
-  const xPosition = 400;
-  const verticalGap = 150;
+  // Add Start node
+  const startNodeId = 'start';
+  nodes.push({
+    id: startNodeId,
+    type: 'start',
+    position: { x: 100, y: 200 },
+    data: {
+      label: 'Start',
+      type: 'start',
+      validated: true,
+    },
+  });
 
-  // Convert steps to nodes
-  if (flowDefinition.steps) {
-    flowDefinition.steps.forEach((step, index) => {
-      const node = stepToNode(step, index, xPosition, yPosition);
+  let xPosition = 400; // Start position for first node (more space from Start)
+  const yPosition = 200; // Fixed Y position for horizontal flow
+  const horizontalGap = 350; // Gap between nodes horizontally
+  let nodeCounter = 0;
+
+  // Helper to get next node ID
+  const getNextNodeId = (step: Step): string => {
+    if (step.id) return step.id;
+    return `node_${nodeCounter++}`;
+  };
+
+  // Helper to get correct handle IDs based on node type
+  const getHandleIds = (nodeType: FlowNodeType): { source: string; target: string } => {
+    // Container nodes (Loop, Parallel) use 'left' and 'right'
+    if (nodeType === 'loopContainer' || nodeType === 'parallelContainer') {
+      return { source: 'right', target: 'left' };
+    }
+    // Routing nodes (Conditional, Switch) use 'input' for target (no generic source - they have specific handles)
+    if (nodeType === 'conditionalContainer' || nodeType === 'switchContainer') {
+      return { source: 'output', target: 'input' };  // source won't be used for sequential edges
+    }
+    // Task, subflow, exit, note nodes use 'input' and 'output'
+    return { source: 'output', target: 'input' };
+  };
+
+  // Recursive helper to process steps (including nested ones)
+  const processSteps = (
+    steps: Step[],
+    parentId?: string,
+    startX?: number,
+    startY?: number,
+    stepGap?: number,
+    isVertical: boolean = false // New param to control layout direction
+  ): { lastNodeId: string | null; nextX: number; nextY: number; firstNodeId: string | null } => {
+    let currentX = startX ?? xPosition;
+    let currentY = startY ?? yPosition;
+    let lastNodeId: string | null = null;
+    let localFirstNodeId: string | null = null;
+    const currentGap = stepGap ?? horizontalGap;
+
+    steps.forEach((step, stepIndex) => {
+      const nodeId = getNextNodeId(step);
+      const node = stepToNode(step, stepIndex, currentX, currentY, parentId);
+
       if (node) {
         nodes.push(node);
-        yPosition += verticalGap;
 
-        // Create edge from previous node
-        if (index > 0 && nodes.length > 1) {
-          edges.push({
-            id: `e${nodes[nodes.length - 2].id}-${node.id}`,
-            source: nodes[nodes.length - 2].id,
-            target: node.id,
-          });
+        // Track first node at top level
+        if (!parentId && !localFirstNodeId) {
+          localFirstNodeId = nodeId;
+        }
+
+        // Create edge from previous node (only at same level)
+        if (lastNodeId) {
+          // Get the source and target nodes to determine handle types
+          const sourceNode = nodes.find(n => n.id === lastNodeId);
+          const targetNode = node;
+
+          if (sourceNode && targetNode) {
+            const sourceHandles = getHandleIds(sourceNode.type as FlowNodeType);
+            const targetHandles = getHandleIds(targetNode.type as FlowNodeType);
+
+            edges.push({
+              id: `e${lastNodeId}-${nodeId}`,
+              source: lastNodeId,
+              sourceHandle: sourceHandles.source,
+              target: nodeId,
+              targetHandle: targetHandles.target,
+              type: 'smoothstep',
+              style: { stroke: '#94a3b8', strokeWidth: 2 },
+              markerEnd: {
+                type: 'arrowclosed',
+                color: '#94a3b8',
+              },
+            });
+          }
+        }
+
+        // Handle Loop container - process 'do' array
+        if (step.for_each && step.do && Array.isArray(step.do)) {
+          // Position children inside the loop container (vertical stack inside)
+          const childX = 40; // Relative X position inside container (accounting for padding)
+          const childY = 80; // Start below the header (respecting minimum margin)
+          const nodeHeight = 60; // Approximate height of a task node
+          const childVerticalGap = nodeHeight + 15; // Node height + 15px gap between nodes
+
+          // Calculate container size based on children
+          const childrenCount = step.do.length;
+          const containerWidth = 250; // Default loop container width
+          const containerHeight = Math.max(
+            180, // Minimum height
+            childY + (childrenCount * nodeHeight) + ((childrenCount - 1) * 15) + 20 // Header + all nodes + gaps + bottom padding
+          );
+
+          // Update the container node with calculated dimensions
+          const containerNode = nodes.find(n => n.id === nodeId);
+          if (containerNode) {
+            containerNode.style = {
+              width: containerWidth,
+              height: containerHeight,
+            };
+            containerNode.width = containerWidth;
+            containerNode.height = containerHeight;
+          }
+
+          // Process children with vertical spacing inside container
+          processSteps(step.do, nodeId, childX, childY, childVerticalGap, true);
+        }
+
+        // Handle Parallel container - process 'parallel' array
+        if (step.parallel && Array.isArray(step.parallel)) {
+          // Position children inside the parallel container (vertical stack inside)
+          const childX = 40; // Relative X position inside container
+          const childY = 80; // Start below the header
+          const nodeHeight = 60; // Approximate height of a task node
+          const childVerticalGap = nodeHeight + 15; // Node height + 15px gap between nodes
+
+          // Calculate container size based on children
+          const childrenCount = step.parallel.length;
+          const containerWidth = 250; // Default parallel container width
+          const containerHeight = Math.max(
+            180, // Minimum height
+            childY + (childrenCount * nodeHeight) + ((childrenCount - 1) * 15) + 20 // Header + all nodes + gaps + bottom padding
+          );
+
+          // Update the container node with calculated dimensions
+          const containerNode = nodes.find(n => n.id === nodeId);
+          if (containerNode) {
+            containerNode.style = {
+              width: containerWidth,
+              height: containerHeight,
+            };
+            containerNode.width = containerWidth;
+            containerNode.height = containerHeight;
+          }
+
+          // Process children with vertical spacing inside container
+          processSteps(step.parallel, nodeId, childX, childY, childVerticalGap, true);
+        }
+
+        // Handle Conditional - process 'then' and 'else' chains (routing, not containment)
+        if (step.if && (step.then || step.else)) {
+          const branchX = currentX + horizontalGap; // Position branches to the right
+          let branchY = currentY - 100; // Start branches above the conditional node
+
+          // Process 'then' branch
+          if (step.then && Array.isArray(step.then) && step.then.length > 0) {
+            const thenResult = processSteps(step.then, undefined, branchX, branchY, horizontalGap, false);
+
+            // Connect conditional to first 'then' node using 'then' handle
+            if (thenResult.firstNodeId) {
+              const firstThenNode = nodes.find(n => n.id === thenResult.firstNodeId);
+              if (firstThenNode) {
+                const targetHandles = getHandleIds(firstThenNode.type as FlowNodeType);
+
+                edges.push({
+                  id: `e${nodeId}-${thenResult.firstNodeId}-then`,
+                  source: nodeId,
+                  sourceHandle: 'then', // Use specific 'then' handle
+                  target: thenResult.firstNodeId,
+                  targetHandle: targetHandles.target,
+                  type: 'smoothstep',
+                  style: { stroke: '#22c55e', strokeWidth: 2 }, // Green for then
+                  markerEnd: {
+                    type: 'arrowclosed',
+                    color: '#22c55e',
+                  },
+                  label: 'then',
+                });
+              }
+            }
+
+            branchY = thenResult.nextY + 100; // Position 'else' below 'then'
+          }
+
+          // Process 'else' branch
+          if (step.else && Array.isArray(step.else) && step.else.length > 0) {
+            const elseResult = processSteps(step.else, undefined, branchX, branchY, horizontalGap, false);
+
+            // Connect conditional to first 'else' node using 'else' handle
+            if (elseResult.firstNodeId) {
+              const firstElseNode = nodes.find(n => n.id === elseResult.firstNodeId);
+              if (firstElseNode) {
+                const targetHandles = getHandleIds(firstElseNode.type as FlowNodeType);
+
+                edges.push({
+                  id: `e${nodeId}-${elseResult.firstNodeId}-else`,
+                  source: nodeId,
+                  sourceHandle: 'else', // Use specific 'else' handle
+                  target: elseResult.firstNodeId,
+                  targetHandle: targetHandles.target,
+                  type: 'smoothstep',
+                  style: { stroke: '#ef4444', strokeWidth: 2 }, // Red for else
+                  markerEnd: {
+                    type: 'arrowclosed',
+                    color: '#ef4444',
+                  },
+                  label: 'else',
+                });
+              }
+            }
+          }
+        }
+
+        // Handle Switch - process 'cases' and 'default' chains (routing, not containment)
+        if (step.switch && (step.cases || step.default)) {
+          const branchX = currentX + horizontalGap; // Position branches to the right
+          let branchY = currentY - 100; // Start branches above the switch node
+
+          // Store case information in node data for UI rendering
+          const casesData = step.cases?.map((caseExpr, idx) => ({
+            id: `case_${idx}`,
+            when: caseExpr.when,
+          })) || [];
+
+          // Update node data to include cases
+          const switchNode = nodes.find(n => n.id === nodeId);
+          if (switchNode) {
+            switchNode.data.cases = casesData;
+          }
+
+          // Process each case branch
+          if (step.cases && Array.isArray(step.cases)) {
+            step.cases.forEach((caseExpr, caseIndex) => {
+              if (caseExpr.do && Array.isArray(caseExpr.do) && caseExpr.do.length > 0) {
+                const caseResult = processSteps(caseExpr.do, undefined, branchX, branchY, horizontalGap, false);
+
+                // Connect switch to first case node using case-specific handle
+                if (caseResult.firstNodeId) {
+                  const firstCaseNode = nodes.find(n => n.id === caseResult.firstNodeId);
+                  if (firstCaseNode) {
+                    const targetHandles = getHandleIds(firstCaseNode.type as FlowNodeType);
+                    const caseId = `case_${caseIndex}`;
+
+                    edges.push({
+                      id: `e${nodeId}-${caseResult.firstNodeId}-${caseId}`,
+                      source: nodeId,
+                      sourceHandle: `case_${caseId}`, // Use case-specific handle (matches SwitchContainerNode)
+                      target: caseResult.firstNodeId,
+                      targetHandle: targetHandles.target,
+                      type: 'smoothstep',
+                      style: { stroke: '#3b82f6', strokeWidth: 2 }, // Blue for cases
+                      markerEnd: {
+                        type: 'arrowclosed',
+                        color: '#3b82f6',
+                      },
+                      label: Array.isArray(caseExpr.when) ? caseExpr.when.join(', ') : String(caseExpr.when),
+                    });
+                  }
+                }
+
+                branchY = caseResult.nextY + 80; // Position next case below current
+              }
+            });
+          }
+
+          // Process 'default' branch
+          if (step.default && Array.isArray(step.default) && step.default.length > 0) {
+            const defaultResult = processSteps(step.default, undefined, branchX, branchY, horizontalGap, false);
+
+            // Connect switch to first 'default' node using 'default' handle
+            if (defaultResult.firstNodeId) {
+              const firstDefaultNode = nodes.find(n => n.id === defaultResult.firstNodeId);
+              if (firstDefaultNode) {
+                const targetHandles = getHandleIds(firstDefaultNode.type as FlowNodeType);
+
+                edges.push({
+                  id: `e${nodeId}-${defaultResult.firstNodeId}-default`,
+                  source: nodeId,
+                  sourceHandle: 'default', // Use specific 'default' handle
+                  target: defaultResult.firstNodeId,
+                  targetHandle: targetHandles.target,
+                  type: 'smoothstep',
+                  style: { stroke: '#6b7280', strokeWidth: 2 }, // Gray for default
+                  markerEnd: {
+                    type: 'arrowclosed',
+                    color: '#6b7280',
+                  },
+                  label: 'default',
+                });
+              }
+            }
+          }
+        }
+
+        lastNodeId = nodeId;
+
+        // Move to next position based on layout direction
+        if (isVertical) {
+          currentY += currentGap;
+        } else {
+          currentX += currentGap;
         }
       }
     });
+
+    return { lastNodeId, nextX: currentX, nextY: currentY, firstNodeId: localFirstNodeId };
+  };
+
+  // Convert steps to nodes
+  if (flowDefinition.steps) {
+    const result = processSteps(flowDefinition.steps);
+
+    // Connect Start node to first step
+    if (result.firstNodeId) {
+      const firstNode = nodes.find(n => n.id === result.firstNodeId);
+      if (firstNode) {
+        const targetHandles = getHandleIds(firstNode.type as FlowNodeType);
+        edges.push({
+          id: `e${startNodeId}-${result.firstNodeId}`,
+          source: startNodeId,
+          sourceHandle: 'output',
+          target: result.firstNodeId,
+          targetHandle: targetHandles.target,
+          type: 'smoothstep',
+          style: { stroke: '#94a3b8', strokeWidth: 2 },
+          markerEnd: {
+            type: 'arrowclosed',
+            color: '#94a3b8',
+          },
+        });
+      }
+    }
   }
 
   return { nodes, edges, flowDefinition };
@@ -49,7 +363,8 @@ function stepToNode(
   step: Step,
   index: number,
   x: number,
-  y: number
+  y: number,
+  parentId?: string
 ): Node<FlowNodeData> | null {
   let type: FlowNodeType = 'task';
   let label = `Step ${index + 1}`;
@@ -61,6 +376,9 @@ function stepToNode(
   } else if (step.if) {
     type = 'conditionalContainer';
     label = step.id || 'Conditional';
+  } else if (step.switch) {
+    type = 'switchContainer';
+    label = step.id || 'Switch';
   } else if (step.for_each) {
     type = 'loopContainer';
     label = step.id || 'Loop';
@@ -72,7 +390,7 @@ function stepToNode(
     label = 'Exit';
   }
 
-  return {
+  const node: Node<FlowNodeData> = {
     id: step.id || `node_${index}`,
     type,
     position: { x, y },
@@ -83,6 +401,14 @@ function stepToNode(
       validated: true,
     },
   };
+
+  // Add parentId and extent if this is a child node
+  if (parentId) {
+    node.parentId = parentId;
+    node.extent = 'parent';
+  }
+
+  return node;
 }
 
 /**
@@ -107,18 +433,162 @@ export function flowToYaml(
     edgesBySource.set(edge.source, existing);
   });
 
-  // Convert nodes to steps (simplified - sequential flow for now)
-  const steps: Step[] = [];
+  // Track which nodes have been processed to avoid duplicates
+  const processedNodes = new Set<string>();
 
-  // Sort nodes by Y position to maintain visual order
-  const sortedNodes = [...flowNodes].sort((a, b) => a.position.y - b.position.y);
+  // Helper to follow edges from a node and build steps
+  const followEdges = (nodeId: string, handleId?: string): Step[] => {
+    const steps: Step[] = [];
+    const outgoingEdges = edgesBySource.get(nodeId) || [];
 
-  sortedNodes.forEach((node) => {
+    // Filter edges by handle if specified
+    const relevantEdges = handleId
+      ? outgoingEdges.filter(e => e.sourceHandle === handleId)
+      : outgoingEdges;
+
+    // Sort by target node position (X for horizontal, Y for vertical)
+    const sortedEdges = [...relevantEdges].sort((a, b) => {
+      const nodeA = nodeMap.get(a.target);
+      const nodeB = nodeMap.get(b.target);
+      if (!nodeA || !nodeB) return 0;
+      return nodeA.position.x - nodeB.position.x;
+    });
+
+    sortedEdges.forEach(edge => {
+      const targetNode = nodeMap.get(edge.target);
+      if (targetNode && !processedNodes.has(targetNode.id)) {
+        const step = buildStep(targetNode);
+        if (step) {
+          steps.push(step);
+        }
+      }
+    });
+
+    return steps;
+  };
+
+  // Helper to build a single step (and process its nested structure)
+  const buildStep = (node: Node<FlowNodeData>): Step | null => {
+    if (processedNodes.has(node.id)) return null;
+    processedNodes.add(node.id);
+
     const step = nodeToStep(node);
-    if (step) {
-      steps.push(step);
+    if (!step) return null;
+
+    // Handle container nodes (Loop, Parallel) - use parentId
+    if (node.type === 'loopContainer' && step.for_each) {
+      const children = flowNodes.filter(n => n.parentId === node.id);
+      const sortedChildren = [...children].sort((a, b) => a.position.y - b.position.y);
+      step.do = sortedChildren.map(child => {
+        processedNodes.add(child.id);
+        return nodeToStep(child);
+      }).filter(s => s !== null) as Step[];
+    } else if (node.type === 'parallelContainer') {
+      const children = flowNodes.filter(n => n.parentId === node.id);
+      const sortedChildren = [...children].sort((a, b) => a.position.y - b.position.y);
+      step.parallel = sortedChildren.map(child => {
+        processedNodes.add(child.id);
+        return nodeToStep(child);
+      }).filter(s => s !== null) as Step[];
     }
-  });
+    // Handle routing nodes (Conditional, Switch) - follow edges by handle
+    else if (node.type === 'conditionalContainer' && step.if) {
+      step.then = followBranchChain(node.id, 'then');
+      step.else = followBranchChain(node.id, 'else');
+    } else if (node.type === 'switchContainer' && step.switch) {
+      // Reconstruct cases from node data and follow edges
+      const casesData = node.data.cases || [];
+      step.cases = casesData.map((caseData: any, idx: number) => {
+        const handleId = `case_case_${idx}`;
+        return {
+          when: caseData.when,
+          do: followBranchChain(node.id, handleId)
+        };
+      }).filter((c: any) => c.do.length > 0);
+
+      step.default = followBranchChain(node.id, 'default');
+    }
+
+    return step;
+  };
+
+  // Helper to follow an entire branch chain (for conditional/switch branches)
+  const followBranchChain = (nodeId: string, handleId: string): Step[] => {
+    const steps: Step[] = [];
+    const outgoingEdges = edgesBySource.get(nodeId) || [];
+
+    // Find the edge with the specific handle
+    const branchEdge = outgoingEdges.find(e => e.sourceHandle === handleId);
+    if (!branchEdge) return steps;
+
+    // Start following the chain from the first node
+    let currentNodeId: string | null = branchEdge.target;
+
+    while (currentNodeId) {
+      const currentNode = nodeMap.get(currentNodeId);
+      if (!currentNode || processedNodes.has(currentNodeId)) break;
+
+      const step = buildStep(currentNode);
+      if (step) {
+        steps.push(step);
+      }
+
+      // Find the next node in the chain (follow 'output' handle for tasks)
+      const nextEdges = edgesBySource.get(currentNodeId) || [];
+      const nextEdge = nextEdges.find(e =>
+        e.sourceHandle === 'output' || e.sourceHandle === 'right'
+      );
+
+      currentNodeId = nextEdge ? nextEdge.target : null;
+
+      // Stop if we hit another routing node or container (they'll be processed separately)
+      if (currentNodeId) {
+        const nextNode = nodeMap.get(currentNodeId);
+        if (nextNode && (
+          nextNode.type === 'conditionalContainer' ||
+          nextNode.type === 'switchContainer' ||
+          nextNode.type === 'loopContainer' ||
+          nextNode.type === 'parallelContainer'
+        )) {
+          break;
+        }
+      }
+    }
+
+    return steps;
+  };
+
+  // Helper function to recursively build steps with nested children
+  const buildStepsRecursively = (parentId: string | null): Step[] => {
+    // Get nodes at this level (children of parentId, or top-level if parentId is null)
+    const nodesAtLevel = flowNodes.filter((node) =>
+      parentId === null ? !node.parentId : node.parentId === parentId
+    );
+
+    // Sort by position (X for top-level horizontal, Y for nested vertical)
+    const sortedNodes = [...nodesAtLevel].sort((a, b) => {
+      if (parentId === null) {
+        return a.position.x - b.position.x; // Horizontal for top level
+      }
+      return a.position.y - b.position.y; // Vertical for nested
+    });
+
+    const steps: Step[] = [];
+
+    sortedNodes.forEach((node) => {
+      const step = buildStep(node);
+      if (step) {
+        steps.push(step);
+      }
+    });
+
+    return steps;
+  };
+
+  // Convert nodes to steps, starting from top level (parentId = null)
+  const steps = buildStepsRecursively(null);
+
+  const sortedNodes = [...flowNodes].sort((a, b) => a.position.y - b.position.y);
 
   // Build output definition with proper field order:
   // flow, description, inputs, outputs, connections, triggers, on_cancel, steps (last)
@@ -136,6 +606,136 @@ export function flowToYaml(
   outputDefinition.steps = steps;
 
   return buildYamlWithComments(outputDefinition, sortedNodes);
+}
+
+/**
+ * Helper function to render a single step with proper indentation
+ */
+function renderStep(step: Step, index: number, indentLevel: number): string[] {
+  const indent = '  '.repeat(indentLevel);
+  const lines: string[] = [];
+
+  // Handle different step types
+  if ('task' in step) {
+    lines.push(`${indent}- task: ${step.task || 'TODO'}`);
+    if (step.id) {
+      lines.push(`${indent}  id: ${step.id}`);
+    }
+    if (step.inputs && Object.keys(step.inputs).length > 0) {
+      lines.push(`${indent}  inputs:`);
+      Object.entries(step.inputs).forEach(([key, value]) => {
+        lines.push(`${indent}    ${key}: ${JSON.stringify(value)}`);
+      });
+    }
+    if (step.outputs && step.outputs.length > 0) {
+      lines.push(`${indent}  outputs:`);
+      step.outputs.forEach((output) => {
+        lines.push(`${indent}    - ${output}`);
+      });
+    }
+  } else if (step.for_each) {
+    lines.push(`${indent}- for_each: ${step.for_each}`);
+    if (step.id) {
+      lines.push(`${indent}  id: ${step.id}`);
+    }
+    lines.push(`${indent}  as: ${step.as || 'item'}`);
+    lines.push(`${indent}  do:`);
+    if (step.do && step.do.length > 0) {
+      step.do.forEach((childStep, childIndex) => {
+        const childLines = renderStep(childStep, childIndex, indentLevel + 2);
+        lines.push(...childLines);
+      });
+    }
+  } else if (step.parallel) {
+    lines.push(`${indent}- parallel:`);
+    if (step.id) {
+      lines.push(`${indent}  id: ${step.id}`);
+    }
+    if (step.parallel && step.parallel.length > 0) {
+      step.parallel.forEach((childStep, childIndex) => {
+        const childLines = renderStep(childStep, childIndex, indentLevel + 1);
+        lines.push(...childLines);
+      });
+    }
+  } else if (step.if) {
+    if (typeof step.if === 'string') {
+      lines.push(`${indent}- if: ${step.if}`);
+    } else if (typeof step.if === 'object') {
+      lines.push(`${indent}- if:`);
+      Object.entries(step.if).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          lines.push(`${indent}    ${key}:`);
+          value.forEach((condition) => {
+            lines.push(`${indent}      - ${condition}`);
+          });
+        } else {
+          lines.push(`${indent}    ${key}: ${JSON.stringify(value)}`);
+        }
+      });
+    }
+    if (step.id) {
+      lines.push(`${indent}  id: ${step.id}`);
+    }
+    lines.push(`${indent}  then:`);
+    if (step.then && step.then.length > 0) {
+      step.then.forEach((childStep, childIndex) => {
+        const childLines = renderStep(childStep, childIndex, indentLevel + 2);
+        lines.push(...childLines);
+      });
+    }
+    if (step.else) {
+      lines.push(`${indent}  else:`);
+      if (step.else.length > 0) {
+        step.else.forEach((childStep, childIndex) => {
+          const childLines = renderStep(childStep, childIndex, indentLevel + 2);
+          lines.push(...childLines);
+        });
+      }
+    }
+  } else if (step.switch) {
+    lines.push(`${indent}- switch: ${step.switch}`);
+    if (step.id) {
+      lines.push(`${indent}  id: ${step.id}`);
+    }
+    if (step.cases && step.cases.length > 0) {
+      lines.push(`${indent}  cases:`);
+      step.cases.forEach((caseExpr) => {
+        const whenValue = Array.isArray(caseExpr.when)
+          ? caseExpr.when.map(v => JSON.stringify(v)).join(', ')
+          : JSON.stringify(caseExpr.when);
+        lines.push(`${indent}    - when: ${whenValue}`);
+        lines.push(`${indent}      do:`);
+        if (caseExpr.do && caseExpr.do.length > 0) {
+          caseExpr.do.forEach((childStep, childIndex) => {
+            const childLines = renderStep(childStep, childIndex, indentLevel + 4);
+            lines.push(...childLines);
+          });
+        }
+      });
+    }
+    if (step.default && step.default.length > 0) {
+      lines.push(`${indent}  default:`);
+      step.default.forEach((childStep, childIndex) => {
+        const childLines = renderStep(childStep, childIndex, indentLevel + 2);
+        lines.push(...childLines);
+      });
+    }
+  } else if (step.exit) {
+    lines.push(`${indent}- exit: ${typeof step.exit === 'object' ? '' : 'true'}`);
+    if (typeof step.exit === 'object') {
+      if (step.exit.reason) {
+        lines.push(`${indent}    reason: ${JSON.stringify(step.exit.reason)}`);
+      }
+      if (step.exit.outputs) {
+        lines.push(`${indent}    outputs:`);
+        Object.entries(step.exit.outputs).forEach(([key, value]) => {
+          lines.push(`${indent}      ${key}: ${JSON.stringify(value)}`);
+        });
+      }
+    }
+  }
+
+  return lines;
 }
 
 /**
@@ -261,106 +861,9 @@ function buildYamlWithComments(
     lines.push('steps:');
 
     definition.steps.forEach((step: Step, index: number) => {
-      const node = nodes[index];
-      const nodeLabel = node?.data?.label || '';
-      const stepDescription = step.description || nodeLabel;
-
-      // Add comment with step number and description
-      if (stepDescription) {
-        lines.push(`  # Step ${index + 1}: ${stepDescription}`);
-      }
-
-      // Handle different step types
-      if ('task' in step) {
-        // Task node - show even if task name is empty or undefined
-        lines.push(`  - task: ${step.task || 'TODO'}`);
-        if (step.id) {
-          lines.push(`    id: ${step.id}`);
-        }
-        if (step.description && step.description !== stepDescription) {
-          lines.push(`    description: ${JSON.stringify(step.description)}`);
-        }
-        if (step.inputs && Object.keys(step.inputs).length > 0) {
-          lines.push(`    inputs:`);
-          Object.entries(step.inputs).forEach(([key, value]) => {
-            let comment = '';
-            // Add comment showing source node for variable references
-            if (typeof value === 'string' && value.startsWith('${') && value.endsWith('}')) {
-              const varPath = value.slice(2, -1);
-              const sourceNodeId = varPath.split('.')[0];
-
-              // Find the source node to get its label
-              if (sourceNodeId !== 'inputs') {
-                const sourceNode = nodes.find(n => n.id === sourceNodeId);
-                if (sourceNode) {
-                  const sourceLabel = sourceNode.data.label || sourceNodeId;
-                  comment = `  # from ${sourceLabel}`;
-                }
-              }
-            }
-            lines.push(`      ${key}: ${JSON.stringify(value)}${comment}`);
-          });
-        }
-        if (step.outputs && step.outputs.length > 0) {
-          lines.push(`    outputs:`);
-          step.outputs.forEach((output) => {
-            lines.push(`      - ${output}`);
-          });
-        }
-      } else if (step.if) {
-        // Handle condition - can be string or object (quantified: any, all, none)
-        if (typeof step.if === 'string') {
-          lines.push(`  - if: ${step.if}`);
-        } else if (typeof step.if === 'object') {
-          lines.push(`  - if:`);
-          Object.entries(step.if).forEach(([key, value]) => {
-            if (Array.isArray(value)) {
-              lines.push(`      ${key}:`);
-              value.forEach((condition) => {
-                lines.push(`        - ${condition}`);
-              });
-            } else {
-              lines.push(`      ${key}: ${JSON.stringify(value)}`);
-            }
-          });
-        }
-        if (step.id) {
-          lines.push(`    id: ${step.id}`);
-        }
-        lines.push(`    then:`);
-        lines.push(`      # TODO: Add conditional steps`);
-        if (step.else) {
-          lines.push(`    else:`);
-          lines.push(`      # TODO: Add else steps`);
-        }
-      } else if (step.for_each) {
-        lines.push(`  - for_each: ${step.for_each}`);
-        if (step.id) {
-          lines.push(`    id: ${step.id}`);
-        }
-        lines.push(`    as: ${step.as || 'item'}`);
-        lines.push(`    do:`);
-        lines.push(`      # TODO: Add loop steps`);
-      } else if (step.parallel) {
-        lines.push(`  - parallel:`);
-        if (step.id) {
-          lines.push(`    id: ${step.id}`);
-        }
-        lines.push(`      # TODO: Add parallel steps`);
-      } else if (step.exit) {
-        lines.push(`  - exit: ${typeof step.exit === 'object' ? '' : 'true'}`);
-        if (typeof step.exit === 'object') {
-          if (step.exit.reason) {
-            lines.push(`      reason: ${JSON.stringify(step.exit.reason)}`);
-          }
-          if (step.exit.outputs) {
-            lines.push(`      outputs:`);
-            Object.entries(step.exit.outputs).forEach(([key, value]) => {
-              lines.push(`        ${key}: ${JSON.stringify(value)}`);
-            });
-          }
-        }
-      }
+      // Use the recursive renderStep function for all steps
+      const stepLines = renderStep(step, index, 1); // indent level 1 for top-level steps
+      lines.push(...stepLines);
 
       // Add blank line between steps
       if (index < definition.steps.length - 1) {
@@ -404,6 +907,14 @@ function nodeToStep(node: Node<FlowNodeData>): Step | null {
         if: 'condition',
         then: [],
         else: [],
+      };
+
+    case 'switchContainer':
+      return {
+        ...baseStep,
+        switch: 'expression',
+        cases: [],
+        default: [],
       };
 
     case 'loopContainer':

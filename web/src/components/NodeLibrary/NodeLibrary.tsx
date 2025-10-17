@@ -140,7 +140,16 @@ const createDragPreview = (nodeType: FlowNodeType): HTMLElement => {
   return preview;
 };
 
-export default function NodeLibrary() {
+interface NodeLibraryProps {
+  pendingConnection?: {
+    sourceNodeId: string;
+    sourceHandleId: string | null;
+    position: { x: number; y: number };
+  } | null;
+  onNodeSelected?: (nodeType: FlowNodeType) => void;
+}
+
+export default function NodeLibrary({ pendingConnection, onNodeSelected }: NodeLibraryProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const dragPreviewRef = useRef<HTMLElement | null>(null);
   const { flowDefinition } = useFlowStore();
@@ -222,15 +231,32 @@ export default function NodeLibrary() {
         </div>
       </div>
 
+      {/* Show message if there's a pending connection */}
+      {pendingConnection && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-sm font-semibold text-blue-800">
+            Click a node to connect
+          </p>
+          <p className="text-xs text-blue-600 mt-1">
+            Select a node type to create and automatically connect it
+          </p>
+        </div>
+      )}
+
       {/* Standard Node Templates */}
       <div className="space-y-2">
         {filteredTemplates.map((template) => (
           <div
             key={template.type}
-            draggable
-            onDragStart={(e) => onDragStart(e, template.type)}
+            draggable={!pendingConnection}
+            onDragStart={(e) => !pendingConnection && onDragStart(e, template.type)}
             onDragEnd={onDragEnd}
-            className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg cursor-move hover:border-blue-400 hover:shadow-md transition-all"
+            onClick={() => pendingConnection && onNodeSelected?.(template.type)}
+            className={`flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg transition-all ${
+              pendingConnection
+                ? 'cursor-pointer hover:border-blue-500 hover:shadow-lg hover:bg-blue-50'
+                : 'cursor-move hover:border-blue-400 hover:shadow-md'
+            }`}
           >
             <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
               <span className="text-blue-600 font-semibold">
@@ -245,6 +271,13 @@ export default function NodeLibrary() {
                 {template.description}
               </div>
             </div>
+            {pendingConnection && (
+              <div className="flex-shrink-0">
+                <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </div>
+            )}
           </div>
         ))}
       </div>

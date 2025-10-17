@@ -21,6 +21,11 @@ function App() {
   const [showNodeLibrary, setShowNodeLibrary] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [showFlowManager, setShowFlowManager] = useState(true);
+  const [pendingConnection, setPendingConnection] = useState<{
+    sourceNodeId: string;
+    sourceHandleId: string | null;
+    position: { x: number; y: number };
+  } | null>(null);
   const selectedNode = useFlowStore((state) => state.selectedNode);
   const { nodes, edges, flowDefinition, executionHistory, addNode, onConnect, setNodes, setEdges, setFlowDefinition, setExecution, setExecutionHistory } = useFlowStore();
   const { project, getCurrentFlow, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition, updateFlowExecutionHistory, loadFromStorage } = useProjectStore();
@@ -65,6 +70,14 @@ function App() {
     const node = nodes.find(n => n.id === selectedNode);
     return node?.type !== 'note';
   })();
+
+  // Handle connection drag ending in open space
+  const handleConnectionDragEnd = useCallback((sourceNodeId: string, sourceHandleId: string | null, position: { x: number; y: number }) => {
+    // Store the pending connection info
+    setPendingConnection({ sourceNodeId, sourceHandleId, position });
+    // Open the node library panel
+    setShowNodeLibrary(true);
+  }, []);
 
   // Handle creating a node from keyboard shortcut
   const handleCreateNode = useCallback((nodeType: FlowNodeType) => {
@@ -328,32 +341,119 @@ function App() {
             />
           )}
 
-          {/* Add Node Button */}
-          <button
-            onClick={() => setShowNodeLibrary(!showNodeLibrary)}
-            className="absolute top-4 right-4 z-10 w-14 h-14 bg-white rounded-lg shadow-lg border border-gray-200 flex items-center justify-center hover:bg-blue-50 hover:border-blue-400 transition-all"
-            title="Add Node"
-          >
-            <span className="text-2xl font-semibold text-gray-700">+</span>
-          </button>
+          {/* Add Node Button - hide when panel is open */}
+          {!showNodeLibrary && (
+            <button
+              onClick={() => setShowNodeLibrary(!showNodeLibrary)}
+              className="absolute top-4 right-4 z-10 w-14 h-14 bg-white rounded-lg shadow-lg border border-gray-200 flex items-center justify-center hover:bg-blue-50 hover:border-blue-400 transition-all"
+              title="Add Node"
+            >
+              <span className="text-2xl font-semibold text-gray-700">+</span>
+            </button>
+          )}
 
-          {/* Sliding Node Library Panel - Right Side */}
-          <div
-            className={`absolute top-0 right-0 h-full w-120 bg-white border-l border-gray-200 shadow-xl z-20 transform transition-transform duration-300 ease-in-out ${
-              showNodeLibrary ? 'translate-x-0' : 'translate-x-full'
-            }`}
-          >
+          {/* Node Library Panel - Right Side (Sliding) */}
+          <div className={`fixed top-16 right-0 bottom-0 w-120 bg-white border-l border-gray-200 shadow-xl z-50 transform transition-transform duration-300 ease-in-out ${
+            showNodeLibrary ? 'translate-x-0' : 'translate-x-full'
+          }`}>
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">What happens next?</h2>
               <button
-                onClick={() => setShowNodeLibrary(false)}
+                onClick={() => {
+                  setShowNodeLibrary(false);
+                  setPendingConnection(null);
+                }}
                 className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
               >
                 ×
               </button>
             </div>
             <div className="overflow-y-auto h-[calc(100%-4rem)]">
-              <NodeLibrary />
+              <NodeLibrary
+                pendingConnection={pendingConnection}
+                onNodeSelected={(nodeType) => {
+                  if (pendingConnection) {
+                    // Create a node and connect it
+                    const nodeId = useFlowStore.getState().getNextNodeId();
+
+                    // Get node dimensions
+                    let nodeWidth = 200;
+                    let nodeHeight = 80;
+                    if (nodeType === 'conditionalContainer' || nodeType === 'switchContainer') {
+                      nodeWidth = 600;
+                      nodeHeight = 300;
+                    } else if (nodeType === 'parallelContainer') {
+                      nodeWidth = 450;
+                      nodeHeight = 150;
+                    } else if (nodeType === 'loopContainer') {
+                      nodeWidth = 250;
+                      nodeHeight = 150;
+                    } else if (nodeType === 'exit') {
+                      nodeWidth = 160;
+                      nodeHeight = 60;
+                    } else if (nodeType === 'note') {
+                      nodeWidth = 150;
+                      nodeHeight = 80;
+                    }
+
+                    // Snap position to grid (15x15)
+                    const gridSize = 15;
+                    const snappedX = Math.round(pendingConnection.position.x / gridSize) * gridSize;
+                    const snappedY = Math.round(pendingConnection.position.y / gridSize) * gridSize;
+
+                    // Position at the snapped cursor location (not centered)
+                    const position = {
+                      x: snappedX,
+                      y: snappedY,
+                    };
+
+                    let stepData: any = undefined;
+                    if (nodeType === 'task') {
+                      stepData = {
+                        id: nodeId,
+                        task: undefined,
+                        inputs: {},
+                        outputs: [],
+                      };
+                    }
+
+                    const newNode = {
+                      id: nodeId,
+                      type: nodeType,
+                      position,
+                      data: {
+                        label: `New ${nodeType}`,
+                        type: nodeType,
+                        ...(nodeType === 'task' && stepData && { step: stepData }),
+                      },
+                    };
+
+                    addNode(newNode);
+
+                    // Determine the correct target handle based on node type
+                    let targetHandle = 'input'; // Default for task nodes
+                    if (nodeType === 'loopContainer' || nodeType === 'parallelContainer') {
+                      targetHandle = 'left';
+                    } else if (nodeType === 'conditionalContainer' || nodeType === 'switchContainer') {
+                      targetHandle = 'left';
+                    }
+
+                    // Create the connection
+                    setTimeout(() => {
+                      onConnect({
+                        source: pendingConnection.sourceNodeId,
+                        sourceHandle: pendingConnection.sourceHandleId || 'output',
+                        target: nodeId,
+                        targetHandle: targetHandle,
+                      });
+                    }, 10);
+
+                    // Clear pending connection and close panel
+                    setPendingConnection(null);
+                    setShowNodeLibrary(false);
+                  }
+                }}
+              />
             </div>
           </div>
 
@@ -362,6 +462,7 @@ function App() {
             <FlowDesigner
               onNodeCreated={() => setShowNodeLibrary(false)}
               reactFlowInstanceRef={reactFlowInstanceRef}
+              onConnectionDragEnd={handleConnectionDragEnd}
             />
           </div>
 

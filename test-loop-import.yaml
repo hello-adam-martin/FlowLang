@@ -1,0 +1,36 @@
+flow: SimpleLoop
+description: Test loop container import
+
+inputs:
+  - name: items
+    type: array
+    required: true
+
+steps:
+  - task: PrepareData
+    id: prep
+    outputs:
+      - data
+
+  - for_each: ${inputs.items}
+    id: process_loop
+    as: item
+    do:
+      - task: ProcessItem
+        id: process_item
+        inputs:
+          item: ${item}
+        outputs:
+          - result
+
+      - task: SaveResult
+        id: save_result
+        inputs:
+          data: ${process_item.result}
+        outputs:
+          - saved
+
+  - task: Complete
+    id: complete
+    inputs:
+      summary: ${prep.data}

@@ -118,13 +118,15 @@ function TaskNode({ data, selected, id }: NodeProps) {
           />
         </div>
       )}
-      {/* Loop execution order badge - shows when node is inside a loop */}
-      {nodeData.loopExecutionOrder && (
+      {/* Execution order badge - shows when node is inside a loop or parallel container */}
+      {(nodeData.loopExecutionOrder || nodeData.executionOrder) && (
         <div
           className="absolute -top-1.5 -left-1.5 w-5 h-5 bg-gray-300 text-white rounded-full flex items-center justify-center shadow-sm z-10 text-[10px] font-bold"
-          title={`Loop execution order: ${nodeData.loopExecutionOrder}`}
+          title={nodeData.loopExecutionOrder
+            ? `Loop execution order: ${nodeData.loopExecutionOrder}`
+            : `Execution order: ${nodeData.executionOrder}`}
         >
-          {nodeData.loopExecutionOrder}
+          {nodeData.loopExecutionOrder || nodeData.executionOrder}
         </div>
       )}
 

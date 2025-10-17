@@ -70,8 +70,41 @@ The `loan_approval` flow demonstrates the complexity we need to support:
 
 ## Implementation Phases
 
-### Phase 1: Child Node Visualization (FOUNDATION)
+### Phase 1: Child Node Visualization (FOUNDATION) - ✅ COMPLETE
 **Goal:** Make child nodes visible inside their parent containers
+
+**UX Enhancements (2025-10-17):**
+- ✅ Double-click to open property panel (single-click only selects visually)
+- ✅ Removed "fake" connection handles - using standard handles
+- ✅ Connection drag-and-drop node creation:
+  - Drag connection from any node and release in open space
+  - Node library panel slides in from right
+  - Click any node type to create it at cursor position (grid-snapped)
+  - Automatic connection created between source and new node
+  - Works for all node types (tasks and containers) with correct handle IDs
+- ✅ Fixed panel positioning with `fixed` positioning to avoid clipping
+- ✅ Smart panel state management to prevent premature closing
+
+**Architectural Decision:**
+We adopted a **hybrid approach** with two distinct node types:
+
+1. **Container Nodes** (Loop, Parallel)
+   - Act as parent containers for child nodes
+   - Children have `parentId` pointing to container
+   - Support execution order tracking via badges
+   - Custom resize handles with padding constraints
+
+2. **Routing Nodes** (Conditional, Switch)
+   - Don't contain children - route to separate node chains
+   - Multiple output handles representing different paths
+   - Simpler than container approach
+   - Each output connects to next node in that branch
+
+This hybrid approach provides:
+- Clean visual flow representation
+- Simpler implementation for branching logic
+- Better performance (fewer nested nodes)
+- More intuitive editing experience
 
 **Status by Container:**
 
@@ -87,86 +120,93 @@ The `loan_approval` flow demonstrates the complexity we need to support:
 - ✅ Badge positioned top-right
 - ✅ Starting dimensions: 250x150px
 
-#### Conditional Container - 🟡 IN PROGRESS
+#### Conditional Container - ✅ REDESIGNED AS ROUTING NODE
 **File:** `web/src/components/nodes/ConditionalContainerNode.tsx`
-- ✅ Has "then" and "else" sections
+- ✅ Redesigned as routing node (not a container)
+- ✅ Two output handles: "then" (green) and "else" (red)
 - ✅ Delete button on hover
-- ✅ Grey color scheme
-- ⚠️ Uses NodeResizer (not custom resize handle)
-- ⚠️ No padding constraints (nodes can snap to edges)
-- ❌ Execution order tracking not implemented
-- ❌ No visual differentiation when branch is active
-- ❌ Sections may need layout improvements
+- ✅ Fixed width (300px) compact design
+- ✅ Visual labels showing output semantics
+- ✅ No drop zones - routes to next nodes instead
 
-**Needs:**
-- Custom resize handle like Loop container
-- 30px padding constraints
-- Visual highlighting of active branch during execution
-- Improved section layout/styling
+**Architectural Decision:**
+- Changed from container with child nodes to routing node with output handles
+- Simplifies nesting - conditions route to separate node chains
+- Cleaner visual flow representation
+- Aligns with Switch container design
 
-#### Parallel Container - 🟡 IN PROGRESS
+#### Parallel Container - ✅ COMPLETE
 **File:** `web/src/components/nodes/ParallelContainerNode.tsx`
-- ✅ Has track system with ghost placeholders
+- ✅ Custom resize handle (bottom-right corner)
+- ✅ 30px padding constraint preventing edge positioning
+- ✅ Execution order tracking with numbered badges
 - ✅ Delete button on hover
 - ✅ Grey color scheme
-- ⚠️ Uses NodeResizer (not custom resize handle)
-- ⚠️ Track-specific drop zones work but complex
-- ❌ No padding constraints
-- ❌ No execution order tracking
-- ❌ Track management UI could be improved
+- ✅ Single droppable area (no track system)
+- ✅ Children render automatically via ReactFlow parentId
+- ✅ Topological sort for dependency-based execution order
+- ✅ Badge positioned top-right
+- ✅ Starting dimensions: 450x200px
 
-**Needs:**
-- Custom resize handle like Loop container
-- Padding constraints (but must respect track layout)
-- Execution progress visualization per track
-- Better track add/remove UI
+**Implementation:**
+- Simplified from track system to single drop zone
+- Uses topological sort to calculate execution order based on edges
+- Nodes with no incoming edges start in parallel (no badge)
+- Connected nodes show execution order badges (1, 2, 3...)
 
-#### Switch Container - 🟡 IN PROGRESS
+#### Switch Container - ✅ REDESIGNED AS ROUTING NODE
 **File:** `web/src/components/nodes/SwitchContainerNode.tsx`
-- ✅ Has case sections with dynamic add/remove
-- ✅ Has default section
+- ✅ Redesigned as routing node (not a container)
+- ✅ Multiple output handles for cases + default
 - ✅ Delete button on hover
-- ✅ Grey color scheme
-- ⚠️ Uses NodeResizer (not custom resize handle)
-- ❌ No padding constraints
-- ❌ No execution order tracking
-- ❌ Case management UI could be cleaner
+- ✅ Compact vertical design
+- ✅ Dynamic case add/remove via UI
+- ✅ Visual labels showing case values
+- ✅ No drop zones - routes to next nodes instead
 
-**Needs:**
-- Custom resize handle like Loop container
-- 30px padding constraints for all sections
-- Visual highlighting of active case during execution
-- Improved case add/remove UX
+**Architectural Decision:**
+- Changed from container with case sections to routing node with output handles
+- Each case gets its own output handle (colored and labeled)
+- Default fallback handle at bottom
+- Simpler than container approach, aligns with Conditional design
 
 **Tasks:**
 1.1. ✅ Render child nodes in "do" section of LoopContainerNode
-1.2. ⚠️ Render child nodes in "then" section of ConditionalContainerNode (works but needs polish)
-1.3. ⚠️ Render child nodes in "else" section of ConditionalContainerNode (works but needs polish)
-1.4. ⚠️ Render child nodes in parallel tracks of ParallelContainerNode (works but needs polish)
-1.5. ⚠️ Render child nodes in switch cases of SwitchContainerNode (works but needs polish)
-1.6. ✅ Position children relatively within parent bounds (ReactFlow handles this)
-1.7. ✅ Add visual indicators (border, background) for container membership (grey scheme applied)
-1.8. ❌ Handle scrolling when many children (needs testing)
-1.9. ✅ Add padding constraints to prevent edge positioning (Loop only)
-1.10. ✅ Add custom resize handles (Loop only)
-1.11. ✅ Add execution order tracking (Loop only)
+1.2. ✅ Redesign ConditionalContainerNode as routing node with output handles (not a container)
+1.3. ✅ Redesign SwitchContainerNode as routing node with output handles (not a container)
+1.4. ✅ Render child nodes in ParallelContainerNode with execution order tracking
+1.5. ✅ Position children relatively within parent bounds (ReactFlow handles this)
+1.6. ✅ Add visual indicators (border, background) for container membership (grey scheme applied)
+1.7. ✅ Add padding constraints to prevent edge positioning (Loop and Parallel)
+1.8. ✅ Add custom resize handles (Loop and Parallel)
+1.9. ✅ Add execution order tracking (Loop and Parallel)
+1.10. ❌ Handle scrolling when many children (needs testing)
 
 **Test Criteria:**
 - [✅] Manually create a loop with task nodes inside
 - [✅] Children appear visually inside the loop container boundaries
 - [✅] Can see connections between child nodes inside loop
 - [✅] Container sections have distinct visual styling
+- [✅] Manually create a parallel container with task nodes inside
+- [✅] Parallel execution order badges appear based on dependencies
+- [✅] Conditional and Switch work as routing nodes with output handles
 - [⚠️] Scrolling works if children overflow (needs testing with many nodes)
-- [⚠️] Same tests needed for Conditional, Parallel, and Switch containers
 
-**Expected Result:**
-All four container types should have:
-- Custom resize handles (bottom-right corner)
-- 30px padding constraints
-- Consistent visual styling
-- Delete on hover
-- Execution order tracking where applicable
-- Professional polish matching Loop container quality
+**Expected Result (ACHIEVED):**
+Container nodes (Loop, Parallel):
+- ✅ Custom resize handles (bottom-right corner)
+- ✅ 30px padding constraints
+- ✅ Consistent visual styling
+- ✅ Delete on hover
+- ✅ Execution order tracking where applicable
+- ✅ Professional polish matching Loop container quality
+
+Routing nodes (Conditional, Switch):
+- ✅ Multiple output handles with visual labels
+- ✅ Compact fixed-width design
+- ✅ Clear routing semantics
+- ✅ Delete on hover
+- ✅ Professional appearance
 
 ---
 

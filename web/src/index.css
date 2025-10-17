@@ -59,9 +59,21 @@ body {
   background-color: rgba(156, 163, 175, 0.05) !important;
 }
 
+/* When dragging from panel, make child nodes not block drop detection */
+.react-flow__node-parallelContainer .react-flow__node,
+.react-flow__node-loopContainer .react-flow__node {
+  pointer-events: all;
+}
+
+/* But during a panel drag operation, make them transparent to pointer events */
+body.dragging-from-panel .react-flow__node[data-parent] {
+  pointer-events: none !important;
+}
+
 /* Edge styling */
 .react-flow__edge {
   cursor: pointer;
+  z-index: 1000;
 }
 
 .react-flow__edge-path {

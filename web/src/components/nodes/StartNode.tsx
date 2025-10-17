@@ -1,9 +1,8 @@
 import { memo } from 'react';
-import { Position } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import type { FlowNodeData } from '../../types/node';
 import { useFlowStore } from '../../store/flowStore';
-import QuickConnectHandle from '../handles/QuickConnectHandle';
 
 const StartNode = memo(({ id, data, selected }: NodeProps<FlowNodeData>) => {
   const flowDefinition = useFlowStore((state) => state.flowDefinition);
@@ -73,11 +72,12 @@ const StartNode = memo(({ id, data, selected }: NodeProps<FlowNodeData>) => {
         }`}
         style={{ minWidth: '180px' }}
       >
-        {/* Output handle (right side) with quick connect */}
-        <QuickConnectHandle
-          nodeId={id}
+        {/* Output handle (right side) - circle shape */}
+        <Handle
+          type="source"
           position={Position.Right}
           id="output"
+          className="!w-3 !h-3 !border-2 !border-white !bg-gray-300 !rounded-full hover:!bg-gray-400 transition-all"
         />
 
         {/* Start Section - at top */}

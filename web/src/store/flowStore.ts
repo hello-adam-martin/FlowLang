@@ -149,17 +149,38 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
   },
 
   onConnect: (connection) => {
+    // Determine edge color based on source handle
+    let edgeColor = '#94a3b8'; // Default gray
+    let edgeLabel: string | undefined;
+
+    if (connection.sourceHandle === 'then') {
+      edgeColor = '#22c55e'; // Green for then
+      edgeLabel = 'then';
+    } else if (connection.sourceHandle === 'else') {
+      edgeColor = '#ef4444'; // Red for else
+      edgeLabel = 'else';
+    } else if (connection.sourceHandle?.startsWith('case_')) {
+      edgeColor = '#3b82f6'; // Blue for switch cases
+      // Extract case label from handle (format: case_case_0 -> case_0)
+      const caseId = connection.sourceHandle.replace('case_', '');
+      edgeLabel = caseId;
+    } else if (connection.sourceHandle === 'default') {
+      edgeColor = '#6b7280'; // Gray for default
+      edgeLabel = 'default';
+    }
+
     // Add edge styling with arrowhead at the target
     const newEdge = {
       ...connection,
       type: 'smoothstep',
       deletable: true,
       focusable: true,
-      style: { stroke: '#94a3b8', strokeWidth: 2 },
+      style: { stroke: edgeColor, strokeWidth: 2 },
       markerEnd: {
         type: 'arrowclosed' as const,
-        color: '#94a3b8',
+        color: edgeColor,
       },
+      label: edgeLabel,
       data: {
         onDelete: () => {
           set({

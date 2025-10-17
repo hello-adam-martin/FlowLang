@@ -1,0 +1,48 @@
+flow: ConditionalTest
+description: Test conditional routing node import/export
+
+inputs:
+  - name: value
+    type: number
+    required: true
+
+steps:
+  - task: CheckValue
+    id: check
+    inputs:
+      value: ${inputs.value}
+    outputs:
+      - is_positive
+
+  - if: ${check.is_positive} == true
+    id: condition1
+    then:
+      - task: ProcessPositive
+        id: process_pos
+        inputs:
+          value: ${inputs.value}
+        outputs:
+          - result
+
+      - task: LogPositive
+        id: log_pos
+        inputs:
+          result: ${process_pos.result}
+
+    else:
+      - task: ProcessNegative
+        id: process_neg
+        inputs:
+          value: ${inputs.value}
+        outputs:
+          - result
+
+      - task: LogNegative
+        id: log_neg
+        inputs:
+          result: ${process_neg.result}
+
+  - task: Finalize
+    id: finalize
+    inputs:
+      data: final

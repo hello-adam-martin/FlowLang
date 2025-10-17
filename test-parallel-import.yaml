@@ -1,0 +1,47 @@
+flow: SimpleParallel
+description: Test parallel container import
+
+inputs:
+  - name: data
+    type: object
+    required: true
+
+steps:
+  - task: PrepareData
+    id: prep
+    inputs:
+      raw_data: ${inputs.data}
+    outputs:
+      - ready
+
+  - parallel:
+      - task: ProcessA
+        id: process_a
+        inputs:
+          input: ${prep.ready}
+        outputs:
+          - result_a
+
+      - task: ProcessB
+        id: process_b
+        inputs:
+          input: ${prep.ready}
+        outputs:
+          - result_b
+
+      - task: ProcessC
+        id: process_c
+        inputs:
+          input: ${prep.ready}
+        outputs:
+          - result_c
+    id: parallel_tasks
+
+  - task: Combine
+    id: combine
+    inputs:
+      a: ${process_a.result_a}
+      b: ${process_b.result_b}
+      c: ${process_c.result_c}
+    outputs:
+      - final_result

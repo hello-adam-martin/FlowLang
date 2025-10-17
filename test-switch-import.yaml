@@ -1,0 +1,82 @@
+flow: SwitchTest
+description: Test switch routing node import/export
+
+inputs:
+  - name: status
+    type: string
+    required: true
+
+steps:
+  - task: ValidateInput
+    id: validate
+    inputs:
+      status: ${inputs.status}
+    outputs:
+      - validated_status
+
+  - switch: ${validate.validated_status}
+    id: status_router
+    cases:
+      - when: "pending"
+        do:
+          - task: ProcessPending
+            id: process_pending
+            inputs:
+              status: ${validate.validated_status}
+            outputs:
+              - result
+
+          - task: NotifyPending
+            id: notify_pending
+            inputs:
+              result: ${process_pending.result}
+
+      - when: "approved"
+        do:
+          - task: ProcessApproved
+            id: process_approved
+            inputs:
+              status: ${validate.validated_status}
+            outputs:
+              - result
+
+          - task: NotifyApproved
+            id: notify_approved
+            inputs:
+              result: ${process_approved.result}
+
+      - when: "rejected"
+        do:
+          - task: ProcessRejected
+            id: process_rejected
+            inputs:
+              status: ${validate.validated_status}
+            outputs:
+              - result
+
+          - task: NotifyRejected
+            id: notify_rejected
+            inputs:
+              result: ${process_rejected.result}
+
+    default:
+      - task: ProcessUnknown
+        id: process_unknown
+        inputs:
+          status: ${validate.validated_status}
+        outputs:
+          - result
+
+      - task: NotifyUnknown
+        id: notify_unknown
+        inputs:
+          result: ${process_unknown.result}
+
+  - task: Finalize
+    id: finalize
+    inputs:
+      data: final
+
+outputs:
+  - name: final_result
+    value: ${finalize.data}
