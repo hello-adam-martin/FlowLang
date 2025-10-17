@@ -35,6 +35,11 @@ interface ExecutionState {
   metadata?: ExecutionMetadata;
 }
 
+export interface MockDataConfig {
+  inputs: Record<string, any>;  // Mock values for flow inputs
+  taskOutputs: Record<string, Record<string, any>>;  // Mock outputs per task: { taskId: { outputName: value } }
+}
+
 interface FlowStore {
   // State
   nodes: Node<FlowNodeData>[];
@@ -44,6 +49,8 @@ interface FlowStore {
   nodeIdCounter: number;
   execution: ExecutionState;
   executionHistory: ExecutionHistoryEntry[];
+  mockData: MockDataConfig;
+  showSimulationModal: boolean;
 
   // Actions
   setNodes: (nodes: Node<FlowNodeData>[]) => void;
@@ -81,6 +88,15 @@ interface FlowStore {
   deleteExecutionById: (id: string) => void;
   addToExecutionHistory: (entry: ExecutionHistoryEntry) => void;
 
+  // Mock data actions
+  setMockInputData: (inputName: string, value: any) => void;
+  setMockTaskOutput: (taskId: string, outputName: string, value: any) => void;
+  clearMockData: () => void;
+  getMockData: () => MockDataConfig;
+
+  // Simulation modal actions
+  setShowSimulationModal: (show: boolean) => void;
+
   // Reset
   reset: () => void;
 }
@@ -117,6 +133,11 @@ export const initialExecutionState: ExecutionState = {
   outputs: {},
 };
 
+const initialMockData: MockDataConfig = {
+  inputs: {},
+  taskOutputs: {},
+};
+
 export const useFlowStore = create<FlowStore>((set, get) => ({
   // Initial state
   nodes: initialNodes,
@@ -126,6 +147,8 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
   nodeIdCounter: 0,
   execution: initialExecutionState,
   executionHistory: [],
+  mockData: initialMockData,
+  showSimulationModal: false,
 
   // Setters
   setNodes: (nodes) => set({ nodes }),
@@ -414,6 +437,47 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
     });
   },
 
+  // Mock data actions
+  setMockInputData: (inputName, value) => {
+    set((state) => ({
+      mockData: {
+        ...state.mockData,
+        inputs: {
+          ...state.mockData.inputs,
+          [inputName]: value,
+        },
+      },
+    }));
+  },
+
+  setMockTaskOutput: (taskId, outputName, value) => {
+    set((state) => ({
+      mockData: {
+        ...state.mockData,
+        taskOutputs: {
+          ...state.mockData.taskOutputs,
+          [taskId]: {
+            ...state.mockData.taskOutputs[taskId],
+            [outputName]: value,
+          },
+        },
+      },
+    }));
+  },
+
+  clearMockData: () => {
+    set({ mockData: initialMockData });
+  },
+
+  getMockData: () => {
+    return get().mockData;
+  },
+
+  // Simulation modal actions
+  setShowSimulationModal: (show) => {
+    set({ showSimulationModal: show });
+  },
+
   // Reset
   reset: () => {
     set({
@@ -424,6 +488,7 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
       nodeIdCounter: 0,
       execution: initialExecutionState,
       executionHistory: [],
+      mockData: initialMockData,
     });
   },
 }));

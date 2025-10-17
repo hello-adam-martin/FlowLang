@@ -1,6 +1,6 @@
 import { useFlowStore } from '../../store/flowStore';
 import { flowToYaml, yamlToFlow, validateYaml } from '../../services/yamlConverter';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import FlowSettingsModal from '../FlowSettings/FlowSettingsModal';
 import YAMLPreviewModal from '../YAMLPreviewModal/YAMLPreviewModal';
 import ExecutionResultsPanel from '../ExecutionResultsPanel/ExecutionResultsPanel';
@@ -20,6 +20,13 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
   const [showYAMLModal, setShowYAMLModal] = useState(false);
   const [showResultsPanel, setShowResultsPanel] = useState(false);
   const [showYAMLMenu, setShowYAMLMenu] = useState(false);
+
+  // Automatically show results panel when execution completes
+  useEffect(() => {
+    if (execution.status === 'completed' || execution.status === 'error') {
+      setShowResultsPanel(true);
+    }
+  }, [execution.status]);
 
   const handleNew = () => {
     if (confirm('Create new flow? Current progress will be lost.')) {

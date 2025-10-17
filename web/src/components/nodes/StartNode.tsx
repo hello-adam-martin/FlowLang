@@ -7,13 +7,13 @@ import { useFlowStore } from '../../store/flowStore';
 const StartNode = memo(({ id, data, selected }: NodeProps<FlowNodeData>) => {
   const flowDefinition = useFlowStore((state) => state.flowDefinition);
   const execution = useFlowStore((state) => state.execution);
-  const setSelectedNode = useFlowStore((state) => state.setSelectedNode);
+  const setShowSimulationModal = useFlowStore((state) => state.setShowSimulationModal);
   const triggers = flowDefinition.triggers || [];
 
   const handleSimulate = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Select this node to open the property panel
-    setSelectedNode(id);
+    // Open simulation modal
+    setShowSimulationModal(true);
   };
 
   // Determine button state based on execution status

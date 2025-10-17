@@ -1,9 +1,11 @@
 import type { Node, Edge } from '@xyflow/react';
 import type { FlowNodeData } from '../types/node';
+import type { MockDataConfig } from '../store/flowStore';
 
 interface SimulationContext {
   inputs: Record<string, any>;
   variables: Record<string, any>;
+  mockData?: MockDataConfig;
   updateNodeState: (nodeId: string, state: any) => void;
   addLog: (nodeId: string, message: string, level?: 'info' | 'warning' | 'error') => void;
   isPaused: () => boolean;
@@ -57,8 +59,16 @@ export class FlowSimulator {
       throw new Error('No start node found');
     }
 
-    // Initialize variables with inputs
-    this.context.variables = { ...this.context.inputs };
+    // Initialize variables with inputs, then override with mock data if available
+    const mergedInputs = {
+      ...this.context.inputs,
+      ...(this.context.mockData?.inputs || {}), // Override with mock inputs
+    };
+
+    this.context.variables = {
+      inputs: mergedInputs,  // Nest under 'inputs' for ${inputs.value} references
+      ...mergedInputs,       // Also keep at root level for backward compatibility
+    };
 
     // Find nodes connected to start
     const nextNodes = this.getConnectedNodes(startNode.id);
@@ -150,8 +160,11 @@ export class FlowSimulator {
       // Store result in variables using node ID
       this.context.variables[nodeId] = result;
 
-      // Continue to next nodes (unless it's an exit node)
-      if (node.type !== 'exit') {
+      // Continue to next nodes (only for task nodes and containers, NOT routing nodes)
+      // Routing nodes (conditional, switch) handle their own edge following
+      if (node.type !== 'exit' &&
+          node.type !== 'conditionalContainer' &&
+          node.type !== 'switchContainer') {
         const nextNodes = this.getConnectedNodes(nodeId);
         for (const nextId of nextNodes) {
           if (this.cancelled) break;
@@ -206,6 +219,12 @@ export class FlowSimulator {
       inputSources: Object.keys(inputSources).length > 0 ? inputSources : undefined,
     });
 
+    // Check if mock outputs are configured for this task
+    if (this.context.mockData?.taskOutputs?.[node.id]) {
+      this.context.addLog(node.id, 'Using mock output data', 'info');
+      return this.context.mockData.taskOutputs[node.id];
+    }
+
     // Generate mock output based on node configuration
     const outputs: Record<string, any> = {};
 
@@ -221,7 +240,7 @@ export class FlowSimulator {
   }
 
   /**
-   * Execute a conditional container
+   * Execute a conditional container (routing node)
    */
   private async executeConditional(node: Node<FlowNodeData>): Promise<any> {
     // Evaluate condition (simplified - would need proper expression evaluation)
@@ -230,25 +249,27 @@ export class FlowSimulator {
 
     this.context.addLog(node.id, `Condition evaluated to: ${conditionResult}`, 'info');
 
-    // Find child nodes in then/else branches
-    const childEdges = this.edges.filter(e => e.source === node.id);
+    // Find edges from this conditional
+    const outgoingEdges = this.edges.filter(e => e.source === node.id);
 
-    // Execute appropriate branch
-    for (const edge of childEdges) {
-      const childNode = this.nodes.find(n => n.id === edge.target);
-      if (!childNode) continue;
+    // Determine which handle to follow
+    const handleToFollow = conditionResult ? 'then' : 'else';
 
-      const section = childNode.data.section;
-      if ((conditionResult && section === 'then') || (!conditionResult && section === 'else')) {
-        await this.executeNode(childNode.id);
-      } else {
-        // Skip nodes in non-executed branch
-        this.context.updateNodeState(childNode.id, {
-          state: 'skipped',
-          startTime: Date.now(),
-          endTime: Date.now(),
-        });
-      }
+    // Find the edge with the correct sourceHandle
+    const branchEdge = outgoingEdges.find(e => e.sourceHandle === handleToFollow);
+
+    if (branchEdge && branchEdge.target) {
+      this.context.addLog(node.id, `Following '${handleToFollow}' branch`, 'info');
+      // Follow the entire chain starting from the first node in the branch
+      await this.executeChain(branchEdge.target);
+    }
+
+    // Mark skipped branches
+    const skippedHandle = conditionResult ? 'else' : 'then';
+    const skippedEdge = outgoingEdges.find(e => e.sourceHandle === skippedHandle);
+    if (skippedEdge && skippedEdge.target) {
+      this.context.addLog(node.id, `Skipping '${skippedHandle}' branch`, 'info');
+      await this.markChainAsSkipped(skippedEdge.target);
     }
 
     return { conditionResult };
@@ -266,8 +287,11 @@ export class FlowSimulator {
 
     const results: any[] = [];
 
-    // Find child nodes
-    const childEdges = this.edges.filter(e => e.source === node.id);
+    // Find child nodes (nodes with parentId = this loop's id)
+    const childNodes = this.nodes.filter(n => n.parentId === node.id);
+
+    // Sort children by position (Y coordinate) for execution order
+    const sortedChildren = childNodes.sort((a, b) => a.position.y - b.position.y);
 
     for (let i = 0; i < items.length; i++) {
       if (this.cancelled) break;
@@ -278,9 +302,9 @@ export class FlowSimulator {
 
       this.context.addLog(node.id, `Iteration ${i + 1}/${items.length}`, 'info');
 
-      // Execute child nodes
-      for (const edge of childEdges) {
-        await this.executeNode(edge.target!);
+      // Execute all child nodes in order
+      for (const child of sortedChildren) {
+        await this.executeNode(child.id);
       }
 
       results.push({ index: i, item: items[i] });
@@ -320,7 +344,7 @@ export class FlowSimulator {
   }
 
   /**
-   * Execute a switch container
+   * Execute a switch container (routing node)
    */
   private async executeSwitch(node: Node<FlowNodeData>): Promise<any> {
     const switchValue = this.resolveVariable(node.data.step?.switch);
@@ -329,52 +353,44 @@ export class FlowSimulator {
     this.context.addLog(node.id, `Switch value: ${JSON.stringify(switchValue)}`, 'info');
 
     // Find matching case
-    let matchedCase: any = null;
+    let matchedCaseId: string | null = null;
     for (const caseData of cases) {
       const whenValue = caseData.when;
       if (Array.isArray(whenValue)) {
         if (whenValue.includes(switchValue)) {
-          matchedCase = caseData;
+          matchedCaseId = caseData.id;
           break;
         }
       } else if (whenValue === switchValue) {
-        matchedCase = caseData;
+        matchedCaseId = caseData.id;
         break;
       }
     }
 
-    if (matchedCase) {
-      this.context.addLog(node.id, `Matched case: ${matchedCase.id}`, 'info');
+    // Determine which handle to follow
+    const handleToFollow = matchedCaseId ? `case_${matchedCaseId}` : 'default';
+    this.context.addLog(node.id, `Following handle: ${handleToFollow}`, 'info');
 
-      // Execute nodes in matched case
-      const childEdges = this.edges.filter(e => e.source === node.id);
-      for (const edge of childEdges) {
-        const childNode = this.nodes.find(n => n.id === edge.target);
-        if (childNode && childNode.data.caseId === matchedCase.id) {
-          await this.executeNode(childNode.id);
-        } else if (childNode) {
-          // Skip nodes in other cases
-          this.context.updateNodeState(childNode.id, {
-            state: 'skipped',
-            startTime: Date.now(),
-            endTime: Date.now(),
-          });
-        }
-      }
-    } else {
-      this.context.addLog(node.id, 'No case matched, executing default', 'warning');
+    // Find edges from this switch
+    const outgoingEdges = this.edges.filter(e => e.source === node.id);
 
-      // Execute default case nodes
-      const childEdges = this.edges.filter(e => e.source === node.id);
-      for (const edge of childEdges) {
-        const childNode = this.nodes.find(n => n.id === edge.target);
-        if (childNode && childNode.data.caseId === 'default') {
-          await this.executeNode(childNode.id);
-        }
+    // Find the edge with the matching handle
+    const branchEdge = outgoingEdges.find(e => e.sourceHandle === handleToFollow);
+
+    if (branchEdge && branchEdge.target) {
+      // Follow the entire chain starting from the first node in the branch
+      await this.executeChain(branchEdge.target);
+    }
+
+    // Mark other branches as skipped
+    const skippedEdges = outgoingEdges.filter(e => e.sourceHandle !== handleToFollow);
+    for (const edge of skippedEdges) {
+      if (edge.target) {
+        await this.markChainAsSkipped(edge.target);
       }
     }
 
-    return { matchedCase: matchedCase?.id || 'default' };
+    return { matchedCase: matchedCaseId || 'default' };
   }
 
   /**
@@ -401,15 +417,111 @@ export class FlowSimulator {
   }
 
   /**
-   * Evaluate a condition (simplified)
+   * Execute a chain of nodes (for routing branches)
+   * Follows edges until hitting another routing/container node
+   */
+  private async executeChain(startNodeId: string): Promise<void> {
+    let currentNodeId: string | null = startNodeId;
+
+    while (currentNodeId && !this.cancelled) {
+      const node = this.nodes.find(n => n.id === currentNodeId);
+      if (!node) break;
+
+      // Execute the current node
+      await this.executeNode(currentNodeId);
+
+      // Check if this is a routing or container node - stop the chain
+      if (node.type === 'conditionalContainer' ||
+          node.type === 'switchContainer' ||
+          node.type === 'loopContainer' ||
+          node.type === 'parallelContainer') {
+        break;
+      }
+
+      // Find next node in chain (follow 'output' or 'right' handle)
+      const nextEdge = this.edges.find(e =>
+        e.source === currentNodeId &&
+        (e.sourceHandle === 'output' || e.sourceHandle === 'right')
+      );
+
+      currentNodeId = nextEdge?.target || null;
+    }
+  }
+
+  /**
+   * Mark an entire chain as skipped
+   */
+  private async markChainAsSkipped(startNodeId: string): Promise<void> {
+    let currentNodeId: string | null = startNodeId;
+
+    while (currentNodeId) {
+      const node = this.nodes.find(n => n.id === currentNodeId);
+      if (!node) break;
+
+      this.context.updateNodeState(currentNodeId, {
+        state: 'skipped',
+        startTime: Date.now(),
+        endTime: Date.now(),
+      });
+
+      // Stop at routing/container nodes
+      if (node.type === 'conditionalContainer' ||
+          node.type === 'switchContainer' ||
+          node.type === 'loopContainer' ||
+          node.type === 'parallelContainer') {
+        break;
+      }
+
+      // Find next node in chain
+      const nextEdge = this.edges.find(e =>
+        e.source === currentNodeId &&
+        (e.sourceHandle === 'output' || e.sourceHandle === 'right')
+      );
+
+      currentNodeId = nextEdge?.target || null;
+    }
+  }
+
+  /**
+   * Evaluate a condition with support for comparison operators
    */
   private evaluateCondition(condition: any): boolean {
     if (typeof condition === 'boolean') return condition;
+
     if (typeof condition === 'string') {
-      // Simple variable lookup
+      // Check for comparison operators in the string
+      const comparisonRegex = /(.+?)\s*(==|!=|<=|>=|<|>)\s*(.+)/;
+      const match = condition.match(comparisonRegex);
+
+      if (match) {
+        const [, leftExpr, operator, rightExpr] = match;
+        const leftValue = this.resolveVariable(leftExpr.trim());
+        const rightValue = this.resolveVariable(rightExpr.trim());
+
+        // Perform comparison based on operator
+        switch (operator) {
+          case '==':
+            return leftValue == rightValue;
+          case '!=':
+            return leftValue != rightValue;
+          case '<':
+            return leftValue < rightValue;
+          case '>':
+            return leftValue > rightValue;
+          case '<=':
+            return leftValue <= rightValue;
+          case '>=':
+            return leftValue >= rightValue;
+          default:
+            return false;
+        }
+      }
+
+      // No comparison operator - simple variable lookup
       const value = this.resolveVariable(condition);
       return Boolean(value);
     }
+
     if (typeof condition === 'object') {
       // Handle quantified conditions (any/all/none)
       if (condition.any) {
@@ -422,6 +534,7 @@ export class FlowSimulator {
         return !condition.none.some((c: any) => this.evaluateCondition(c));
       }
     }
+
     // Default to true for simulation
     return true;
   }
@@ -451,6 +564,14 @@ export class FlowSimulator {
 
       return this.context.variables[varPath];
     }
+
+    // Parse literal boolean values
+    if (ref === 'true') return true;
+    if (ref === 'false') return false;
+
+    // Parse literal numbers
+    const num = Number(ref);
+    if (!isNaN(num) && ref.trim() !== '') return num;
 
     return ref;
   }

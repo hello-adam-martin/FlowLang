@@ -96,6 +96,28 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
     }
   }, [nodes.length]);
 
+  // Center viewport on currently executing node during simulation
+  useEffect(() => {
+    if (
+      reactFlowInstance.current &&
+      execution.currentNodeId &&
+      execution.status === 'running'
+    ) {
+      const currentNode = nodes.find(n => n.id === execution.currentNodeId);
+      if (currentNode) {
+        // Center the view on the current node with a smooth transition
+        reactFlowInstance.current.setCenter(
+          currentNode.position.x + 100, // Offset by half typical node width
+          currentNode.position.y + 40,  // Offset by half typical node height
+          {
+            zoom: reactFlowInstance.current.getZoom(), // Keep current zoom level
+            duration: 400, // Smooth 400ms transition
+          }
+        );
+      }
+    }
+  }, [execution.currentNodeId, execution.status, nodes]);
+
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: any) => {
       // Single click just selects the node visually (border highlight)

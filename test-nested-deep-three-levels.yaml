@@ -1,0 +1,84 @@
+flow: DeepNesting
+description: Test deep nesting with 3 levels - Parallel > Loop > Parallel
+
+inputs:
+  - name: dataset
+    type: object
+    required: true
+
+steps:
+  - task: PrepareDataset
+    id: prep
+    outputs:
+      - categories
+
+  # Level 1: Parallel container
+  - parallel:
+      # Branch 1: Simple task
+      - task: ProcessMetadata
+        id: process_metadata
+        inputs:
+          data: ${prep.categories}
+        outputs:
+          - metadata
+
+      # Branch 2: Loop container (Level 2)
+      - for_each: ${prep.categories}
+        id: category_loop
+        as: category
+        do:
+          - task: ValidateCategory
+            id: validate_category
+            inputs:
+              category: ${category}
+            outputs:
+              - items
+
+          # Level 3: Parallel container inside loop
+          - parallel:
+              - task: ProcessCategoryData
+                id: process_cat_data
+                inputs:
+                  items: ${validate_category.items}
+                outputs:
+                  - data_result
+
+              - task: ProcessCategoryImages
+                id: process_cat_images
+                inputs:
+                  items: ${validate_category.items}
+                outputs:
+                  - image_result
+
+              - task: ProcessCategoryTags
+                id: process_cat_tags
+                inputs:
+                  items: ${validate_category.items}
+                outputs:
+                  - tag_result
+
+          - task: MergeCategoryResults
+            id: merge_category
+            inputs:
+              data: ${process_cat_data.data_result}
+              images: ${process_cat_images.image_result}
+              tags: ${process_cat_tags.tag_result}
+            outputs:
+              - merged_category
+
+      # Branch 3: Another simple task
+      - task: GenerateSummary
+        id: generate_summary
+        inputs:
+          data: ${prep.categories}
+        outputs:
+          - summary
+
+  - task: Finalize
+    id: finalize
+    inputs:
+      summary: done
+
+outputs:
+  - name: result
+    value: ${finalize.summary}

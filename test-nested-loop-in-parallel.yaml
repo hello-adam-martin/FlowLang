@@ -1,0 +1,59 @@
+flow: LoopInParallel
+description: Test loop container nested inside parallel container
+
+inputs:
+  - name: data
+    type: object
+    required: true
+
+steps:
+  - task: PrepareData
+    id: prep
+    outputs:
+      - items
+      - config
+
+  - parallel:
+      # Task 1: Simple task in parallel
+      - task: ProcessConfig
+        id: process_config
+        inputs:
+          config: ${prep.config}
+        outputs:
+          - result
+
+      # Task 2: Loop nested inside parallel
+      - for_each: ${prep.items}
+        id: loop_in_parallel
+        as: item
+        do:
+          - task: ProcessItem
+            id: process_item
+            inputs:
+              item: ${item}
+            outputs:
+              - processed
+
+          - task: ValidateItem
+            id: validate_item
+            inputs:
+              data: ${process_item.processed}
+            outputs:
+              - valid
+
+      # Task 3: Another simple task in parallel
+      - task: GenerateReport
+        id: generate_report
+        inputs:
+          data: ${prep.config}
+        outputs:
+          - report
+
+  - task: Finalize
+    id: finalize
+    inputs:
+      summary: done
+
+outputs:
+  - name: result
+    value: ${finalize.summary}

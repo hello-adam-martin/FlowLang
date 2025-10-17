@@ -1,0 +1,65 @@
+flow: ParallelInLoop
+description: Test parallel container nested inside loop container
+
+inputs:
+  - name: batches
+    type: array
+    required: true
+
+steps:
+  - task: PrepareBatches
+    id: prep
+    outputs:
+      - batch_list
+
+  - for_each: ${prep.batch_list}
+    id: batch_loop
+    as: batch
+    do:
+      - task: ValidateBatch
+        id: validate_batch
+        inputs:
+          batch: ${batch}
+        outputs:
+          - validated
+
+      # Parallel nested inside loop
+      - parallel:
+          - task: ProcessBatchData
+            id: process_data
+            inputs:
+              data: ${validate_batch.validated}
+            outputs:
+              - processed_data
+
+          - task: ProcessBatchMetadata
+            id: process_metadata
+            inputs:
+              metadata: ${validate_batch.validated}
+            outputs:
+              - processed_metadata
+
+          - task: ProcessBatchAudit
+            id: process_audit
+            inputs:
+              audit: ${validate_batch.validated}
+            outputs:
+              - processed_audit
+
+      - task: MergeBatchResults
+        id: merge_results
+        inputs:
+          data: ${process_data.processed_data}
+          metadata: ${process_metadata.processed_metadata}
+          audit: ${process_audit.processed_audit}
+        outputs:
+          - merged
+
+  - task: Finalize
+    id: finalize
+    inputs:
+      summary: done
+
+outputs:
+  - name: result
+    value: ${finalize.summary}

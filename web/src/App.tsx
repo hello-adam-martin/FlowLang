@@ -6,6 +6,7 @@ import FlowToolbar from './components/FlowToolbar/FlowToolbar';
 import FlowManager from './components/FlowManager/FlowManager';
 import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp/KeyboardShortcutsHelp';
 import ExecutionHistoryView from './components/ExecutionHistoryView/ExecutionHistoryView';
+import SimulationModal from './components/SimulationModal/SimulationModal';
 import { useFlowStore, initialExecutionState } from './store/flowStore';
 import { useProjectStore } from './store/projectStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -27,6 +28,8 @@ function App() {
     position: { x: number; y: number };
   } | null>(null);
   const selectedNode = useFlowStore((state) => state.selectedNode);
+  const showSimulationModal = useFlowStore((state) => state.showSimulationModal);
+  const setShowSimulationModal = useFlowStore((state) => state.setShowSimulationModal);
   const { nodes, edges, flowDefinition, executionHistory, addNode, onConnect, setNodes, setEdges, setFlowDefinition, setExecution, setExecutionHistory } = useFlowStore();
   const { project, getCurrentFlow, getCurrentFlowId, updateFlowNodes, updateFlowEdges, updateFlowDefinition, updateFlowExecutionHistory, loadFromStorage } = useProjectStore();
   const reactFlowInstanceRef = useRef<any>(null);
@@ -483,6 +486,12 @@ function App() {
       <KeyboardShortcutsHelp
         isOpen={showKeyboardHelp}
         onClose={() => setShowKeyboardHelp(false)}
+      />
+
+      {/* Simulation Modal */}
+      <SimulationModal
+        isOpen={showSimulationModal}
+        onClose={() => setShowSimulationModal(false)}
       />
     </div>
   );
