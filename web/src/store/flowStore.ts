@@ -177,10 +177,10 @@ export const useFlowStore = create<FlowStore>((set, get) => ({
     let edgeLabel: string | undefined;
 
     if (connection.sourceHandle === 'then') {
-      edgeColor = '#22c55e'; // Green for then
+      edgeColor = '#94a3b8'; // Gray (removed green color)
       edgeLabel = 'then';
     } else if (connection.sourceHandle === 'else') {
-      edgeColor = '#ef4444'; // Red for else
+      edgeColor = '#94a3b8'; // Gray (removed red color)
       edgeLabel = 'else';
     } else if (connection.sourceHandle?.startsWith('case_')) {
       edgeColor = '#3b82f6'; // Blue for switch cases

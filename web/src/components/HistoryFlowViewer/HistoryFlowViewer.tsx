@@ -202,10 +202,13 @@ export default function HistoryFlowViewer({ execution, nodes, edges }: HistoryFl
     const sourceState = sourceResult?.state;
     const targetState = targetResult?.state;
 
-    // Edge was traversed if both source and target were executed
+    // Edge was traversed if:
+    // 1. Source was executed (completed or error)
+    // 2. Target was actually executed (not pending and NOT skipped)
+    // This ensures that only the path that was actually taken is highlighted
     const wasTraversed = sourceState && targetState &&
                          (sourceState.state === 'completed' || sourceState.state === 'error') &&
-                         (targetState.state !== 'pending');
+                         (targetState.state !== 'pending' && targetState.state !== 'skipped');
 
     if (wasTraversed) {
       return {
