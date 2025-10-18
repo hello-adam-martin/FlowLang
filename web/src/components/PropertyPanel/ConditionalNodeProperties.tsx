@@ -6,6 +6,7 @@ import YAMLPreviewModal from '../YAMLPreviewModal/YAMLPreviewModal';
 import { nodeToYaml } from '../../services/yamlConverter';
 import { useFlowStore } from '../../store/flowStore';
 import ExecutionStatusDisplay from './ExecutionStatusDisplay';
+import QuantifiedConditionEditor from './QuantifiedConditionEditor';
 
 interface ConditionalNodePropertiesProps {
   node: FlowNode;
@@ -63,12 +64,11 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
     typeof step.if === 'string' ? step.if : ''
   );
 
-  const [quantifiedConditions, setQuantifiedConditions] = useState<string[]>(() => {
+  const [quantifiedCondition, setQuantifiedCondition] = useState<any>(() => {
     if (typeof step.if === 'object' && step.if !== null) {
-      const key = Object.keys(step.if)[0] as 'all' | 'any' | 'none';
-      return Array.isArray(step.if[key]) ? step.if[key] : [];
+      return step.if;
     }
-    return [''];
+    return { all: [''] };
   });
 
   const [showYAMLModal, setShowYAMLModal] = useState(false);
@@ -84,16 +84,9 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
       setConditionType('simple');
       setSimpleCondition(newStep.if);
     } else if (typeof newStep.if === 'object' && newStep.if !== null) {
-      if ('all' in newStep.if) {
-        setConditionType('all');
-        setQuantifiedConditions(Array.isArray(newStep.if.all) ? newStep.if.all : ['']);
-      } else if ('any' in newStep.if) {
-        setConditionType('any');
-        setQuantifiedConditions(Array.isArray(newStep.if.any) ? newStep.if.any : ['']);
-      } else if ('none' in newStep.if) {
-        setConditionType('none');
-        setQuantifiedConditions(Array.isArray(newStep.if.none) ? newStep.if.none : ['']);
-      }
+      const key = Object.keys(newStep.if)[0] as 'all' | 'any' | 'none';
+      setConditionType(key);
+      setQuantifiedCondition(newStep.if);
     } else {
       setConditionType('simple');
       setSimpleCondition('');
@@ -107,10 +100,7 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
     if (conditionType === 'simple') {
       conditionValue = simpleCondition || undefined;
     } else {
-      const filteredConditions = quantifiedConditions.filter(c => c.trim());
-      if (filteredConditions.length > 0) {
-        conditionValue = { [conditionType]: filteredConditions };
-      }
+      conditionValue = quantifiedCondition;
     }
 
     const updatedStep: Step = {
@@ -124,26 +114,12 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
       badge: badge || undefined,
       step: updatedStep,
     });
-  }, [label, badge, conditionType, simpleCondition, quantifiedConditions]);
-
-  const handleAddCondition = () => {
-    setQuantifiedConditions([...quantifiedConditions, '']);
-  };
-
-  const handleRemoveCondition = (index: number) => {
-    setQuantifiedConditions(quantifiedConditions.filter((_, i) => i !== index));
-  };
-
-  const handleConditionChange = (index: number, value: string) => {
-    const updated = [...quantifiedConditions];
-    updated[index] = value;
-    setQuantifiedConditions(updated);
-  };
+  }, [label, badge, conditionType, simpleCondition, quantifiedCondition]);
 
   const handleTypeChange = (newType: ConditionType) => {
     setConditionType(newType);
-    if (newType !== 'simple' && quantifiedConditions.length === 0) {
-      setQuantifiedConditions(['']);
+    if (newType !== 'simple' && !quantifiedCondition) {
+      setQuantifiedCondition({ [newType]: [''] });
     }
   };
 
@@ -228,40 +204,11 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
       {/* Quantified Conditions */}
       {conditionType !== 'simple' && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Conditions <span className="text-red-500">*</span>
-          </label>
-          <div className="space-y-2">
-            {quantifiedConditions.map((cond, index) => (
-              <div key={index} className="flex gap-2">
-                <div className="flex-1">
-                  <VariableSelector
-                    value={cond}
-                    onChange={(val) => handleConditionChange(index, val)}
-                    placeholder="${inputs.value} == 'expected'"
-                    currentNodeId={node.id}
-                    className="font-mono"
-                  />
-                </div>
-                <button
-                  onClick={() => handleRemoveCondition(index)}
-                  className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded text-sm transition-colors flex-shrink-0"
-                  title="Remove condition"
-                  disabled={quantifiedConditions.length === 1}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            ))}
-          </div>
-          <button
-            onClick={handleAddCondition}
-            className="mt-2 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded text-sm transition-colors"
-          >
-            + Add Condition
-          </button>
+          <QuantifiedConditionEditor
+            value={quantifiedCondition}
+            onChange={setQuantifiedCondition}
+            currentNodeId={node.id}
+          />
         </div>
       )}
 
@@ -297,91 +244,91 @@ export default function ConditionalNodeProperties({ node, onUpdate }: Conditiona
           <>
             {/* Then Branch */}
             <div className="mb-3">
-          <div className="text-xs font-medium text-green-700 mb-1 flex items-center gap-1">
-            <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-            Then Branch (when true)
-          </div>
-          {thenBranch.length > 0 ? (
-            <div className="border border-green-200 rounded-lg bg-green-50 divide-y divide-green-100">
-              {thenBranch.map((branchNode, index) => {
-                const nodeTypeIcon = branchNode.type === 'task' ? '📋' :
-                                     branchNode.type === 'loopContainer' ? '↻' :
-                                     branchNode.type === 'parallelContainer' ? '⇉' :
-                                     branchNode.type === 'conditionalContainer' ? '?' :
-                                     branchNode.type === 'switchContainer' ? '⋮' :
-                                     branchNode.type === 'subflow' ? '🔁' : '•';
-                return (
-                  <div key={branchNode.id} className="px-3 py-2 flex items-center gap-2">
-                    <div className="flex-shrink-0 text-xs text-green-600">
-                      {index + 1}.
-                    </div>
-                    <div className="flex-shrink-0 text-base">
-                      {nodeTypeIcon}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">
-                        {branchNode.data.label || 'Untitled'}
+              <div className="text-xs font-medium text-green-700 mb-1 flex items-center gap-1">
+                <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+                Then Branch (when true)
+              </div>
+              {thenBranch.length > 0 ? (
+                <div className="border border-green-200 rounded-lg bg-green-50 divide-y divide-green-100">
+                  {thenBranch.map((branchNode, index) => {
+                    const nodeTypeIcon = branchNode.type === 'task' ? '📋' :
+                                         branchNode.type === 'loopContainer' ? '↻' :
+                                         branchNode.type === 'parallelContainer' ? '⇉' :
+                                         branchNode.type === 'conditionalContainer' ? '?' :
+                                         branchNode.type === 'switchContainer' ? '⋮' :
+                                         branchNode.type === 'subflow' ? '🔁' : '•';
+                    return (
+                      <div key={branchNode.id} className="px-3 py-2 flex items-center gap-2">
+                        <div className="flex-shrink-0 text-xs text-green-600">
+                          {index + 1}.
+                        </div>
+                        <div className="flex-shrink-0 text-base">
+                          {nodeTypeIcon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900 truncate">
+                            {branchNode.data.label || 'Untitled'}
+                          </div>
+                          <div className="text-xs text-gray-500 font-mono truncate">
+                            {branchNode.id}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-500 font-mono truncate">
-                        {branchNode.id}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="border border-dashed border-green-300 rounded-lg px-3 py-2 text-center">
+                  <p className="text-xs text-green-700">
+                    No nodes connected to Then branch
+                  </p>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="border border-dashed border-green-300 rounded-lg px-3 py-2 text-center">
-              <p className="text-xs text-green-700">
-                No nodes connected to Then branch
-              </p>
-            </div>
-          )}
-        </div>
 
-        {/* Else Branch */}
-        <div>
-          <div className="text-xs font-medium text-red-700 mb-1 flex items-center gap-1">
-            <span className="w-3 h-3 bg-red-500 rounded-full"></span>
-            Else Branch (when false)
-          </div>
-          {elseBranch.length > 0 ? (
-            <div className="border border-red-200 rounded-lg bg-red-50 divide-y divide-red-100">
-              {elseBranch.map((branchNode, index) => {
-                const nodeTypeIcon = branchNode.type === 'task' ? '📋' :
-                                     branchNode.type === 'loopContainer' ? '↻' :
-                                     branchNode.type === 'parallelContainer' ? '⇉' :
-                                     branchNode.type === 'conditionalContainer' ? '?' :
-                                     branchNode.type === 'switchContainer' ? '⋮' :
-                                     branchNode.type === 'subflow' ? '🔁' : '•';
-                return (
-                  <div key={branchNode.id} className="px-3 py-2 flex items-center gap-2">
-                    <div className="flex-shrink-0 text-xs text-red-600">
-                      {index + 1}.
-                    </div>
-                    <div className="flex-shrink-0 text-base">
-                      {nodeTypeIcon}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">
-                        {branchNode.data.label || 'Untitled'}
+            {/* Else Branch */}
+            <div>
+              <div className="text-xs font-medium text-red-700 mb-1 flex items-center gap-1">
+                <span className="w-3 h-3 bg-red-500 rounded-full"></span>
+                Else Branch (when false)
+              </div>
+              {elseBranch.length > 0 ? (
+                <div className="border border-red-200 rounded-lg bg-red-50 divide-y divide-red-100">
+                  {elseBranch.map((branchNode, index) => {
+                    const nodeTypeIcon = branchNode.type === 'task' ? '📋' :
+                                         branchNode.type === 'loopContainer' ? '↻' :
+                                         branchNode.type === 'parallelContainer' ? '⇉' :
+                                         branchNode.type === 'conditionalContainer' ? '?' :
+                                         branchNode.type === 'switchContainer' ? '⋮' :
+                                         branchNode.type === 'subflow' ? '🔁' : '•';
+                    return (
+                      <div key={branchNode.id} className="px-3 py-2 flex items-center gap-2">
+                        <div className="flex-shrink-0 text-xs text-red-600">
+                          {index + 1}.
+                        </div>
+                        <div className="flex-shrink-0 text-base">
+                          {nodeTypeIcon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900 truncate">
+                            {branchNode.data.label || 'Untitled'}
+                          </div>
+                          <div className="text-xs text-gray-500 font-mono truncate">
+                            {branchNode.id}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-500 font-mono truncate">
-                        {branchNode.id}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="border border-dashed border-red-300 rounded-lg px-3 py-2 text-center">
+                  <p className="text-xs text-red-700">
+                    No nodes connected to Else branch
+                  </p>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="border border-dashed border-red-300 rounded-lg px-3 py-2 text-center">
-              <p className="text-xs text-red-700">
-                No nodes connected to Else branch
-              </p>
-            </div>
-          )}
-        </div>
           </>
         )}
       </div>

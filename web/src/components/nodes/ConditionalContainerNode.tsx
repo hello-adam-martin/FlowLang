@@ -101,7 +101,7 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
                 (() => {
                   const conditionObj = nodeData.step.if as any;
                   const type = Object.keys(conditionObj)[0] as 'all' | 'any' | 'none';
-                  const conditions = conditionObj[type] as string[];
+                  const conditions = conditionObj[type] as (string | object)[];
 
                   const typeLabel = {
                     all: 'All conditions must be true:',
@@ -109,15 +109,38 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
                     none: 'No conditions must be true:',
                   }[type];
 
+                  const renderCondition = (condition: string | object) => {
+                    if (typeof condition === 'string') {
+                      return condition;
+                    }
+                    // Nested quantifier
+                    const nestedType = Object.keys(condition)[0] as 'all' | 'any' | 'none';
+                    const nestedCount = (condition as any)[nestedType].length;
+                    const nestedLabel = {
+                      all: 'ALL',
+                      any: 'ANY',
+                      none: 'NONE',
+                    }[nestedType];
+                    return `↳ Nested ${nestedLabel} (${nestedCount} conditions)`;
+                  };
+
                   return (
                     <div className="text-xs text-gray-800 mt-1">
                       <div className="font-semibold mb-0.5">{typeLabel}</div>
                       <ul className="space-y-0.5 ml-2">
-                        {conditions.map((condition, idx) => (
-                          <li key={idx} className="font-mono text-[10px] truncate" title={condition}>
-                            • {condition}
-                          </li>
-                        ))}
+                        {conditions.map((condition, idx) => {
+                          const displayText = renderCondition(condition);
+                          const isNested = typeof condition !== 'string';
+                          return (
+                            <li
+                              key={idx}
+                              className={`text-[10px] truncate ${isNested ? 'font-semibold text-amber-700' : 'font-mono'}`}
+                              title={displayText}
+                            >
+                              • {displayText}
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   );
