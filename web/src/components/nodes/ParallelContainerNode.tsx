@@ -10,7 +10,11 @@ function ParallelContainerNode({ data, selected, id }: NodeProps) {
   const updateNode = useFlowStore((state) => state.updateNode);
   const nodes = useFlowStore((state) => state.nodes);
   const edges = useFlowStore((state) => state.edges);
+  const execution = useFlowStore((state) => state.execution);
   const [isHovered, setIsHovered] = useState(false);
+
+  // Get execution state for this node
+  const nodeExecutionState = execution.nodeStates[id];
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ width: number; height: number; mouseX: number; mouseY: number } | null>(null);
   const didResizeRef = useRef(false);
@@ -239,14 +243,35 @@ function ParallelContainerNode({ data, selected, id }: NodeProps) {
     document.addEventListener('mouseup', handleMouseUp);
   }, [id, getNode, setNodes]);
 
+  // Calculate execution-based border color
+  let borderColor = 'border-gray-200';
+  let pulseAnimation = '';
+
+  if (nodeExecutionState) {
+    switch (nodeExecutionState.state) {
+      case 'running':
+        borderColor = 'border-blue-500';
+        pulseAnimation = 'animate-pulse';
+        break;
+      case 'completed':
+        borderColor = 'border-green-500';
+        break;
+      case 'error':
+        borderColor = 'border-red-500';
+        break;
+    }
+  }
+
   return (
     <>
       <div
         className={`relative bg-white/90 rounded-2xl border-2 transition-all group ${
           selected
             ? 'border-gray-400 shadow-xl ring-2 ring-gray-200'
+            : nodeExecutionState
+            ? `${borderColor} shadow-xl`
             : 'border-gray-200 shadow-lg hover:shadow-xl hover:border-gray-300'
-        } w-full h-full flex flex-col overflow-visible`}
+        } ${pulseAnimation} w-full h-full flex flex-col overflow-visible`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         onClick={handleClick}
@@ -258,6 +283,16 @@ function ParallelContainerNode({ data, selected, id }: NodeProps) {
           title={`Execution order: ${nodeData.executionOrder}`}
         >
           {nodeData.executionOrder}
+        </div>
+      )}
+
+      {/* Parallel progress badge - shows running/completed children */}
+      {nodeExecutionState?.containerMeta?.activeChildren && (
+        <div
+          className="absolute -top-3 left-1/2 transform -translate-x-1/2 px-2 py-0.5 bg-blue-500 text-white rounded-full shadow-md z-10 text-[10px] font-bold whitespace-nowrap"
+          title={`${nodeExecutionState.containerMeta.completedChildren?.length || 0} completed, ${nodeExecutionState.containerMeta.activeChildren.length} running`}
+        >
+          {nodeExecutionState.containerMeta.completedChildren?.length || 0}/{(nodeExecutionState.containerMeta.completedChildren?.length || 0) + nodeExecutionState.containerMeta.activeChildren.length} done
         </div>
       )}
 
@@ -317,6 +352,15 @@ function ParallelContainerNode({ data, selected, id }: NodeProps) {
             <div className="text-xs text-gray-700">
               {childNodes.length > 0 ? `${childNodes.length} task${childNodes.length !== 1 ? 's' : ''} in parallel` : 'All tasks execute concurrently'}
             </div>
+            {/* Execution progress - only shown when running */}
+            {nodeExecutionState?.containerMeta && (
+              <div className="text-xs text-blue-600 mt-1 font-mono">
+                {nodeExecutionState.containerMeta.activeChildren && nodeExecutionState.containerMeta.activeChildren.length > 0
+                  ? `${nodeExecutionState.containerMeta.activeChildren.length} running, ${nodeExecutionState.containerMeta.completedChildren?.length || 0} completed`
+                  : `All ${nodeExecutionState.containerMeta.completedChildren?.length || 0} tasks completed`
+                }
+              </div>
+            )}
           </div>
         </div>
       </div>

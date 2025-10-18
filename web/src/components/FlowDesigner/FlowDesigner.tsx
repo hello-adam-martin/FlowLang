@@ -79,6 +79,8 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
   const [isPanning, setIsPanning] = useState(false);
   const hasInitiallyFit = useRef(false);
   const justOpenedNodeLibrary = useRef(false);
+  const lastCenteredNodeId = useRef<string | null>(null);
+  const lastCenterTime = useRef<number>(0);
   const [connectionTooltip, setConnectionTooltip] = useState<{
     message: string;
     position: { x: number; y: number };
@@ -105,15 +107,47 @@ export default function FlowDesigner({ onNodeCreated, reactFlowInstanceRef: exte
     ) {
       const currentNode = nodes.find(n => n.id === execution.currentNodeId);
       if (currentNode) {
-        // Center the view on the current node with a smooth transition
-        reactFlowInstance.current.setCenter(
-          currentNode.position.x + 100, // Offset by half typical node width
-          currentNode.position.y + 40,  // Offset by half typical node height
-          {
-            zoom: reactFlowInstance.current.getZoom(), // Keep current zoom level
-            duration: 400, // Smooth 400ms transition
+        const now = Date.now();
+        const timeSinceLastCenter = now - lastCenterTime.current;
+
+        // Only center if:
+        // 1. It's a different node than last time, OR
+        // 2. Enough time has passed (prevent rapid re-centering on same node)
+        if (
+          lastCenteredNodeId.current !== execution.currentNodeId ||
+          timeSinceLastCenter > 800
+        ) {
+          // Calculate actual node position (accounting for parent containers)
+          let absoluteX = currentNode.position.x;
+          let absoluteY = currentNode.position.y;
+
+          // If node is inside a container, add parent's position
+          if (currentNode.parentId) {
+            const parentNode = nodes.find(n => n.id === currentNode.parentId);
+            if (parentNode) {
+              absoluteX += parentNode.position.x;
+              absoluteY += parentNode.position.y;
+            }
           }
-        );
+
+          // Get node dimensions (use measured or default)
+          const nodeWidth = currentNode.width || currentNode.measured?.width || 200;
+          const nodeHeight = currentNode.height || currentNode.measured?.height || 80;
+
+          // Center the view on the node's actual center point
+          reactFlowInstance.current.setCenter(
+            absoluteX + nodeWidth / 2,
+            absoluteY + nodeHeight / 2,
+            {
+              zoom: reactFlowInstance.current.getZoom(), // Keep current zoom level
+              duration: 600, // Smooth 600ms transition
+            }
+          );
+
+          // Update tracking refs
+          lastCenteredNodeId.current = execution.currentNodeId;
+          lastCenterTime.current = now;
+        }
       }
     }
   }, [execution.currentNodeId, execution.status, nodes]);

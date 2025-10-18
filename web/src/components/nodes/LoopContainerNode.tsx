@@ -10,10 +10,14 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
   const updateNode = useFlowStore((state) => state.updateNode);
   const nodes = useFlowStore((state) => state.nodes);
   const edges = useFlowStore((state) => state.edges);
+  const execution = useFlowStore((state) => state.execution);
   const [isHovered, setIsHovered] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ width: number; height: number; mouseX: number; mouseY: number } | null>(null);
   const didResizeRef = useRef(false);
+
+  // Get execution state for this node
+  const nodeExecutionState = execution.nodeStates[id];
 
   // Store the original size when first rendered (only once)
   const originalSizeRef = useRef<{ width: number; height: number } | null>(null);
@@ -258,14 +262,35 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
     document.addEventListener('mouseup', handleMouseUp);
   }, [id, getNode, setNodes]);
 
+  // Calculate execution-based border color
+  let borderColor = 'border-gray-200';
+  let pulseAnimation = '';
+
+  if (nodeExecutionState) {
+    switch (nodeExecutionState.state) {
+      case 'running':
+        borderColor = 'border-blue-500';
+        pulseAnimation = 'animate-pulse';
+        break;
+      case 'completed':
+        borderColor = 'border-green-500';
+        break;
+      case 'error':
+        borderColor = 'border-red-500';
+        break;
+    }
+  }
+
   return (
     <>
       <div
         className={`relative bg-white/90 rounded-2xl border-2 transition-all group ${
           selected
             ? 'border-gray-400 shadow-xl ring-2 ring-gray-200'
+            : nodeExecutionState
+            ? `${borderColor} shadow-xl`
             : 'border-gray-200 shadow-lg hover:shadow-xl hover:border-gray-300'
-        } w-full h-full flex flex-col overflow-visible`}
+        } ${pulseAnimation} w-full h-full flex flex-col overflow-visible`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         onClick={handleClick}
@@ -277,6 +302,16 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
           title={`Execution order: ${nodeData.executionOrder}`}
         >
           {nodeData.executionOrder}
+        </div>
+      )}
+
+      {/* Loop iteration badge - shows current iteration when running */}
+      {nodeExecutionState?.containerMeta?.currentIteration && (
+        <div
+          className="absolute -top-3 left-1/2 transform -translate-x-1/2 px-2 py-0.5 bg-blue-500 text-white rounded-full shadow-md z-10 text-[10px] font-bold whitespace-nowrap"
+          title={`Loop iteration ${nodeExecutionState.containerMeta.currentIteration} of ${nodeExecutionState.containerMeta.totalIterations}`}
+        >
+          Loop {nodeExecutionState.containerMeta.currentIteration}/{nodeExecutionState.containerMeta.totalIterations}
         </div>
       )}
 
@@ -343,6 +378,16 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
                 <span className="text-gray-500 font-sans">Configure loop...</span>
               )}
             </div>
+            {/* Current item display - only for simple types */}
+            {nodeExecutionState?.containerMeta?.currentItem !== undefined && (
+              <div className="text-xs text-blue-600 mt-1 font-mono">
+                Current: {
+                  typeof nodeExecutionState.containerMeta.currentItem === 'object'
+                    ? JSON.stringify(nodeExecutionState.containerMeta.currentItem).substring(0, 40) + '...'
+                    : String(nodeExecutionState.containerMeta.currentItem)
+                }
+              </div>
+            )}
           </div>
         </div>
       </div>

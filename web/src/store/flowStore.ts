@@ -7,6 +7,25 @@ import type { ExecutionHistoryEntry, ExecutionMetadata } from '../types/executio
 type ExecutionStatus = 'idle' | 'running' | 'paused' | 'completed' | 'error';
 type NodeExecutionState = 'pending' | 'running' | 'completed' | 'error' | 'skipped';
 
+interface ContainerExecutionMetadata {
+  // For loop containers
+  currentIteration?: number;
+  totalIterations?: number;
+  currentItem?: any;
+
+  // For parallel containers
+  activeChildren?: string[];      // Node IDs currently running
+  completedChildren?: string[];   // Node IDs that finished
+
+  // For conditional containers
+  activeBranch?: 'then' | 'else';
+  conditionResult?: boolean;
+
+  // For switch containers
+  matchedCase?: string | number;
+  matchedCaseIndex?: number;
+}
+
 interface NodeExecutionData {
   state: NodeExecutionState;
   startTime?: number;
@@ -15,6 +34,9 @@ interface NodeExecutionData {
   error?: string;
   inputs?: Record<string, any>;
   inputSources?: Record<string, string>;
+
+  // Container-specific execution metadata (for loops, parallels, conditionals, switches)
+  containerMeta?: ContainerExecutionMetadata;
 }
 
 interface ExecutionState {

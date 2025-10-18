@@ -106,6 +106,7 @@ export default function SimulationModal({ isOpen, onClose }: SimulationModalProp
         variables: {},
         mockData: currentMockData,
         updateNodeState: updateNodeExecutionState,
+        getNodeState: (nodeId: string) => useFlowStore.getState().execution.nodeStates[nodeId],
         addLog: addExecutionLog,
         isPaused: () => useFlowStore.getState().execution.status === 'paused',
         stepMode,

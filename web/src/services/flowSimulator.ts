@@ -7,6 +7,7 @@ interface SimulationContext {
   variables: Record<string, any>;
   mockData?: MockDataConfig;
   updateNodeState: (nodeId: string, state: any) => void;
+  getNodeState: (nodeId: string) => any;
   addLog: (nodeId: string, message: string, level?: 'info' | 'warning' | 'error') => void;
   isPaused: () => boolean;
   stepMode: boolean;
@@ -160,11 +161,13 @@ export class FlowSimulator {
       // Store result in variables using node ID
       this.context.variables[nodeId] = result;
 
-      // Continue to next nodes (only for task nodes and containers, NOT routing nodes)
-      // Routing nodes (conditional, switch) handle their own edge following
+      // Continue to next nodes (only for task nodes, NOT containers)
+      // Containers (loop, parallel, conditional, switch) handle their own children
       if (node.type !== 'exit' &&
           node.type !== 'conditionalContainer' &&
-          node.type !== 'switchContainer') {
+          node.type !== 'switchContainer' &&
+          node.type !== 'loopContainer' &&
+          node.type !== 'parallelContainer') {
         const nextNodes = this.getConnectedNodes(nodeId);
         for (const nextId of nextNodes) {
           if (this.cancelled) break;
@@ -254,6 +257,16 @@ export class FlowSimulator {
 
     // Determine which handle to follow
     const handleToFollow = conditionResult ? 'then' : 'else';
+    const activeBranch: 'then' | 'else' = conditionResult ? 'then' : 'else';
+
+    // Update conditional container state with branch information
+    this.context.updateNodeState(node.id, {
+      state: 'running',
+      containerMeta: {
+        activeBranch,
+        conditionResult,
+      }
+    });
 
     // Find the edge with the correct sourceHandle
     const branchEdge = outgoingEdges.find(e => e.sourceHandle === handleToFollow);
@@ -271,6 +284,12 @@ export class FlowSimulator {
       this.context.addLog(node.id, `Skipping '${skippedHandle}' branch`, 'info');
       await this.markChainAsSkipped(skippedEdge.target);
     }
+
+    // Mark conditional as completed and clear metadata
+    this.context.updateNodeState(node.id, {
+      state: 'completed',
+      containerMeta: undefined,
+    });
 
     return { conditionResult };
   }
@@ -300,6 +319,16 @@ export class FlowSimulator {
       this.context.variables[itemVar] = items[i];
       this.context.variables[`${itemVar}_index`] = i;
 
+      // Update loop container state with current iteration metadata
+      this.context.updateNodeState(node.id, {
+        state: 'running',
+        containerMeta: {
+          currentIteration: i + 1,
+          totalIterations: items.length,
+          currentItem: items[i],
+        }
+      });
+
       this.context.addLog(node.id, `Iteration ${i + 1}/${items.length}`, 'info');
 
       // Execute all child nodes in order
@@ -309,6 +338,12 @@ export class FlowSimulator {
 
       results.push({ index: i, item: items[i] });
     }
+
+    // Mark loop as completed and clear metadata
+    this.context.updateNodeState(node.id, {
+      state: 'completed',
+      containerMeta: undefined,
+    });
 
     return { iterations: results.length, results };
   }
@@ -323,6 +358,28 @@ export class FlowSimulator {
 
     // Find child nodes by track
     const childEdges = this.edges.filter(e => e.source === node.id);
+
+    // Collect all child node IDs across all tracks
+    const allChildNodeIds: string[] = [];
+    for (const track of tracks) {
+      const trackNodeIds = childEdges
+        .filter(e => {
+          const targetNode = this.nodes.find(n => n.id === e.target);
+          return targetNode && targetNode.data.trackId === track.id;
+        })
+        .map(e => e.target);
+      allChildNodeIds.push(...trackNodeIds);
+    }
+
+    // Initialize parallel container state - all children start as active
+    this.context.updateNodeState(node.id, {
+      state: 'running',
+      containerMeta: {
+        activeChildren: [...allChildNodeIds],
+        completedChildren: [],
+      }
+    });
+
     const trackPromises: Promise<any>[] = [];
 
     for (const track of tracks) {
@@ -330,15 +387,40 @@ export class FlowSimulator {
         .map(e => this.nodes.find(n => n.id === e.target && n.data.trackId === track.id))
         .filter(Boolean);
 
-      // Execute all nodes in this track in parallel
+      // Execute all nodes in this track in parallel, tracking completion
       const trackPromise = Promise.all(
-        trackNodes.map(n => this.executeNode(n!.id))
+        trackNodes.map(async (n) => {
+          const result = await this.executeNode(n!.id);
+
+          // Update container state: move this child from active to completed
+          const currentMeta = this.context.getNodeState(node.id)?.containerMeta;
+          if (currentMeta) {
+            const activeChildren = currentMeta.activeChildren?.filter(id => id !== n!.id) || [];
+            const completedChildren = [...(currentMeta.completedChildren || []), n!.id];
+
+            this.context.updateNodeState(node.id, {
+              state: 'running',
+              containerMeta: {
+                activeChildren,
+                completedChildren,
+              }
+            });
+          }
+
+          return result;
+        })
       );
 
       trackPromises.push(trackPromise);
     }
 
     const results = await Promise.all(trackPromises);
+
+    // Mark parallel container as completed and clear metadata
+    this.context.updateNodeState(node.id, {
+      state: 'completed',
+      containerMeta: undefined,
+    });
 
     return { tracks: results.length, results };
   }
@@ -354,15 +436,20 @@ export class FlowSimulator {
 
     // Find matching case
     let matchedCaseId: string | null = null;
-    for (const caseData of cases) {
+    let matchedCaseIndex: number | undefined = undefined;
+
+    for (let i = 0; i < cases.length; i++) {
+      const caseData = cases[i];
       const whenValue = caseData.when;
       if (Array.isArray(whenValue)) {
         if (whenValue.includes(switchValue)) {
           matchedCaseId = caseData.id;
+          matchedCaseIndex = i;
           break;
         }
       } else if (whenValue === switchValue) {
         matchedCaseId = caseData.id;
+        matchedCaseIndex = i;
         break;
       }
     }
@@ -370,6 +457,15 @@ export class FlowSimulator {
     // Determine which handle to follow
     const handleToFollow = matchedCaseId ? `case_${matchedCaseId}` : 'default';
     this.context.addLog(node.id, `Following handle: ${handleToFollow}`, 'info');
+
+    // Update switch container state with matched case information
+    this.context.updateNodeState(node.id, {
+      state: 'running',
+      containerMeta: {
+        matchedCase: matchedCaseId || 'default',
+        matchedCaseIndex,
+      }
+    });
 
     // Find edges from this switch
     const outgoingEdges = this.edges.filter(e => e.source === node.id);
@@ -389,6 +485,12 @@ export class FlowSimulator {
         await this.markChainAsSkipped(edge.target);
       }
     }
+
+    // Mark switch as completed and clear metadata
+    this.context.updateNodeState(node.id, {
+      state: 'completed',
+      containerMeta: undefined,
+    });
 
     return { matchedCase: matchedCaseId || 'default' };
   }

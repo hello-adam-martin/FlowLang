@@ -6,12 +6,35 @@ import { useFlowStore } from '../../store/flowStore';
 function ConditionalContainerNode({ data, selected, id }: NodeProps) {
   const nodeData = data as FlowNodeData;
   const removeNode = useFlowStore((state) => state.removeNode);
+  const execution = useFlowStore((state) => state.execution);
   const [isHovered, setIsHovered] = useState(false);
+
+  // Get execution state for this node
+  const nodeExecutionState = execution.nodeStates[id];
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     removeNode(id);
   };
+
+  // Calculate execution-based border color
+  let borderColor = 'border-gray-200';
+  let pulseAnimation = '';
+
+  if (nodeExecutionState) {
+    switch (nodeExecutionState.state) {
+      case 'running':
+        borderColor = 'border-blue-500';
+        pulseAnimation = 'animate-pulse';
+        break;
+      case 'completed':
+        borderColor = 'border-green-500';
+        break;
+      case 'error':
+        borderColor = 'border-red-500';
+        break;
+    }
+  }
 
   return (
     <>
@@ -19,11 +42,25 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
         className={`relative bg-white/90 rounded-2xl border-2 transition-all group w-[300px] ${
           selected
             ? 'border-gray-400 shadow-xl ring-2 ring-gray-200'
+            : nodeExecutionState
+            ? `${borderColor} shadow-xl`
             : 'border-gray-200 shadow-lg hover:shadow-xl hover:border-gray-300'
-        }`}
+        } ${pulseAnimation}`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
+      {/* Active branch badge - shows which branch is executing */}
+      {nodeExecutionState?.containerMeta?.activeBranch && (
+        <div
+          className={`absolute -top-3 left-1/2 transform -translate-x-1/2 px-2 py-0.5 text-white rounded-full shadow-md z-10 text-[10px] font-bold whitespace-nowrap ${
+            nodeExecutionState.containerMeta.activeBranch === 'then' ? 'bg-green-500' : 'bg-red-500'
+          }`}
+          title={`Following ${nodeExecutionState.containerMeta.activeBranch} branch`}
+        >
+          {nodeExecutionState.containerMeta.activeBranch === 'then' ? '✓ THEN' : '✗ ELSE'}
+        </div>
+      )}
+
       {/* Delete button - shows on hover */}
       <button
         onClick={handleDelete}
@@ -96,10 +133,18 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
       {/* Body - Output handles with labels */}
       <div className="px-4 py-3 space-y-2 rounded-b-2xl">
         {/* Then output */}
-        <div className="relative flex items-center bg-green-50/50 border border-green-200 rounded-lg px-3 py-2 group/then hover:bg-green-100/50 transition-colors">
+        <div className={`relative flex items-center rounded-lg px-3 py-2 group/then transition-all ${
+          nodeExecutionState?.containerMeta?.activeBranch === 'then'
+            ? 'bg-green-200 border-2 border-green-500 shadow-md'
+            : 'bg-green-50/50 border border-green-200 hover:bg-green-100/50'
+        }`}>
           <div className="flex items-center gap-2">
-            <span className="text-green-700 font-semibold text-xs">✓ Then</span>
-            <span className="text-green-600 text-[10px]">when true</span>
+            <span className={`font-semibold text-xs ${
+              nodeExecutionState?.containerMeta?.activeBranch === 'then' ? 'text-green-800' : 'text-green-700'
+            }`}>✓ Then</span>
+            <span className={`text-[10px] ${
+              nodeExecutionState?.containerMeta?.activeBranch === 'then' ? 'text-green-700' : 'text-green-600'
+            }`}>when true</span>
           </div>
           <Handle
             type="source"
@@ -111,10 +156,18 @@ function ConditionalContainerNode({ data, selected, id }: NodeProps) {
         </div>
 
         {/* Else output */}
-        <div className="relative flex items-center bg-red-50/50 border border-red-200 rounded-lg px-3 py-2 group/else hover:bg-red-100/50 transition-colors">
+        <div className={`relative flex items-center rounded-lg px-3 py-2 group/else transition-all ${
+          nodeExecutionState?.containerMeta?.activeBranch === 'else'
+            ? 'bg-red-200 border-2 border-red-500 shadow-md'
+            : 'bg-red-50/50 border border-red-200 hover:bg-red-100/50'
+        }`}>
           <div className="flex items-center gap-2">
-            <span className="text-red-700 font-semibold text-xs">✗ Else</span>
-            <span className="text-red-600 text-[10px]">when false</span>
+            <span className={`font-semibold text-xs ${
+              nodeExecutionState?.containerMeta?.activeBranch === 'else' ? 'text-red-800' : 'text-red-700'
+            }`}>✗ Else</span>
+            <span className={`text-[10px] ${
+              nodeExecutionState?.containerMeta?.activeBranch === 'else' ? 'text-red-700' : 'text-red-600'
+            }`}>when false</span>
           </div>
           <Handle
             type="source"

@@ -7,7 +7,11 @@ function SwitchContainerNode({ data, selected, id }: NodeProps) {
   const nodeData = data as FlowNodeData;
   const removeNode = useFlowStore((state) => state.removeNode);
   const updateNode = useFlowStore((state) => state.updateNode);
+  const execution = useFlowStore((state) => state.execution);
   const [isHovered, setIsHovered] = useState(false);
+
+  // Get execution state for this node
+  const nodeExecutionState = execution.nodeStates[id];
 
   // Get cases from node data
   const cases = nodeData.cases || [];
@@ -32,17 +36,52 @@ function SwitchContainerNode({ data, selected, id }: NodeProps) {
     updateNode(id, { cases: newCases });
   };
 
+  // Calculate execution-based border color
+  let borderColor = 'border-gray-200';
+  let pulseAnimation = '';
+
+  if (nodeExecutionState) {
+    switch (nodeExecutionState.state) {
+      case 'running':
+        borderColor = 'border-blue-500';
+        pulseAnimation = 'animate-pulse';
+        break;
+      case 'completed':
+        borderColor = 'border-green-500';
+        break;
+      case 'error':
+        borderColor = 'border-red-500';
+        break;
+    }
+  }
+
   return (
     <>
       <div
         className={`relative bg-white/90 rounded-2xl border-2 transition-all group w-[300px] ${
           selected
             ? 'border-gray-400 shadow-xl ring-2 ring-gray-200'
+            : nodeExecutionState
+            ? `${borderColor} shadow-xl`
             : 'border-gray-200 shadow-lg hover:shadow-xl hover:border-gray-300'
-        }`}
+        } ${pulseAnimation}`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
+      {/* Matched case badge - shows which case is executing */}
+      {nodeExecutionState?.containerMeta?.matchedCase && (
+        <div
+          className={`absolute -top-3 left-1/2 transform -translate-x-1/2 px-2 py-0.5 text-white rounded-full shadow-md z-10 text-[10px] font-bold whitespace-nowrap ${
+            nodeExecutionState.containerMeta.matchedCase === 'default' ? 'bg-gray-500' : 'bg-blue-500'
+          }`}
+          title={`Following ${nodeExecutionState.containerMeta.matchedCase} case`}
+        >
+          {nodeExecutionState.containerMeta.matchedCase === 'default'
+            ? '⚠ DEFAULT'
+            : `➤ ${nodeExecutionState.containerMeta.matchedCase.toUpperCase()}`}
+        </div>
+      )}
+
       {/* Delete button - shows on hover */}
       <button
         onClick={handleDelete}
@@ -98,14 +137,20 @@ function SwitchContainerNode({ data, selected, id }: NodeProps) {
             ? switchCase.when.join(', ')
             : String(switchCase.when || `Case ${index + 1}`);
 
+          const isMatched = nodeExecutionState?.containerMeta?.matchedCase === switchCase.id;
+
           return (
             <div
               key={switchCase.id}
-              className="relative flex items-center bg-blue-50/50 border border-blue-200 rounded-lg px-3 py-2 group/case hover:bg-blue-100/50 transition-colors"
+              className={`relative flex items-center rounded-lg px-3 py-2 group/case transition-all ${
+                isMatched
+                  ? 'bg-blue-200 border-2 border-blue-500 shadow-md'
+                  : 'bg-blue-50/50 border border-blue-200 hover:bg-blue-100/50'
+              }`}
             >
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="text-blue-700 font-semibold text-xs">➤</span>
-                <span className="text-blue-700 text-xs font-mono truncate" title={whenValue}>
+                <span className={`font-semibold text-xs ${isMatched ? 'text-blue-800' : 'text-blue-700'}`}>➤</span>
+                <span className={`text-xs font-mono truncate ${isMatched ? 'text-blue-800' : 'text-blue-700'}`} title={whenValue}>
                   {whenValue}
                 </span>
               </div>
@@ -131,10 +176,18 @@ function SwitchContainerNode({ data, selected, id }: NodeProps) {
         })}
 
         {/* Default output - always present */}
-        <div className="relative flex items-center bg-gray-50/50 border border-gray-300 rounded-lg px-3 py-2 group/default hover:bg-gray-100/50 transition-colors">
+        <div className={`relative flex items-center rounded-lg px-3 py-2 group/default transition-all ${
+          nodeExecutionState?.containerMeta?.matchedCase === 'default'
+            ? 'bg-gray-200 border-2 border-gray-500 shadow-md'
+            : 'bg-gray-50/50 border border-gray-300 hover:bg-gray-100/50'
+        }`}>
           <div className="flex items-center gap-2">
-            <span className="text-gray-700 font-semibold text-xs">⚠ Default</span>
-            <span className="text-gray-600 text-[10px]">fallback</span>
+            <span className={`font-semibold text-xs ${
+              nodeExecutionState?.containerMeta?.matchedCase === 'default' ? 'text-gray-800' : 'text-gray-700'
+            }`}>⚠ Default</span>
+            <span className={`text-[10px] ${
+              nodeExecutionState?.containerMeta?.matchedCase === 'default' ? 'text-gray-700' : 'text-gray-600'
+            }`}>fallback</span>
           </div>
           <Handle
             type="source"
