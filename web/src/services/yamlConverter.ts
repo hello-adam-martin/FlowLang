@@ -791,16 +791,42 @@ function renderStep(step: Step, _index: number, indentLevel: number): string[] {
       lines.push(`${indent}- if: ${step.if}`);
     } else if (typeof step.if === 'object') {
       lines.push(`${indent}- if:`);
-      Object.entries(step.if).forEach(([key, value]) => {
-        if (Array.isArray(value)) {
-          lines.push(`${indent}    ${key}:`);
-          value.forEach((condition) => {
-            lines.push(`${indent}      - ${condition}`);
-          });
-        } else {
-          lines.push(`${indent}    ${key}: ${serializeYamlValue(value)}`);
-        }
-      });
+
+      // Helper function to render nested quantified conditions
+      const renderQuantifiedCondition = (obj: any, currentIndent: string) => {
+        Object.entries(obj).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            lines.push(`${currentIndent}    ${key}:`);
+            value.forEach((condition) => {
+              // Check if condition is a nested quantifier (object) or simple string
+              if (typeof condition === 'object' && condition !== null) {
+                // Nested quantifier - recursively render it
+                const nestedQuantifier = Object.keys(condition)[0];
+                const nestedValues = (condition as any)[nestedQuantifier];
+                lines.push(`${currentIndent}      - ${nestedQuantifier}:`);
+                if (Array.isArray(nestedValues)) {
+                  nestedValues.forEach((nestedCondition) => {
+                    if (typeof nestedCondition === 'object' && nestedCondition !== null) {
+                      // Even deeper nesting - render recursively
+                      lines.push(`${currentIndent}          -`);
+                      renderQuantifiedCondition(nestedCondition, currentIndent + '          ');
+                    } else {
+                      lines.push(`${currentIndent}          - ${nestedCondition}`);
+                    }
+                  });
+                }
+              } else {
+                // Simple string condition
+                lines.push(`${currentIndent}      - ${condition}`);
+              }
+            });
+          } else {
+            lines.push(`${currentIndent}    ${key}: ${serializeYamlValue(value)}`);
+          }
+        });
+      };
+
+      renderQuantifiedCondition(step.if, indent);
     }
     if (step.id) {
       lines.push(`${indent}  id: ${step.id}`);

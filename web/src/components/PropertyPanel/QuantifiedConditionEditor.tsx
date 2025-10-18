@@ -98,6 +98,11 @@ export default function QuantifiedConditionEditor({ value, onChange, currentNode
     if (!tree) return;
 
     const deleteFromTree = (node: ConditionNode): ConditionNode | null => {
+      // If this is the node to delete, return null to remove it
+      if (node.id === nodeId) {
+        return null;
+      }
+
       if (node.type === 'quantifier') {
         const newChildren = node.children
           .map(child => deleteFromTree(child))
@@ -183,7 +188,7 @@ export default function QuantifiedConditionEditor({ value, onChange, currentNode
           <ConditionTreeNode
             key={child.id}
             node={child}
-            depth={0}
+            depth={1}
             currentNodeId={currentNodeId}
             onUpdate={updateNode}
             onDelete={deleteNode}
