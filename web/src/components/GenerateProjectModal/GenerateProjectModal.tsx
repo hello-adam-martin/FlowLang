@@ -117,72 +117,170 @@ export default function GenerateProjectModal({ isOpen, onClose }: GenerateProjec
           {/* Content */}
           <div className="flex-1 overflow-auto px-6 py-4">
             {!project ? (
-              // Pre-generation view
-              <div className="flex flex-col items-center justify-center min-h-full space-y-6 py-8">
-                <div className="text-center">
-                  <div className="w-24 h-24 mx-auto mb-4 bg-amber-100 rounded-full flex items-center justify-center">
-                    <svg className="w-12 h-12 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Ready to Generate Project
-                  </h3>
-                  <p className="text-sm text-gray-600 max-w-md">
-                    Generate a complete FlowLang project including flow.yaml, flow.py with task stubs,
-                    FastAPI server, tests, and documentation.
-                  </p>
-                </div>
-
-                <div className="bg-gray-50 rounded-lg p-6 max-w-md">
-                  <h4 className="text-sm font-medium text-gray-900 mb-3">
-                    What you'll get:
-                  </h4>
-                  <ul className="space-y-2 text-sm text-gray-700">
-                    <li className="flex items-start gap-2">
-                      <span className="text-green-500 mt-0.5">✓</span>
-                      <span><strong>flow.yaml</strong> - Your flow definition</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-green-500 mt-0.5">✓</span>
-                      <span><strong>flow.py</strong> - Task implementations (stubs)</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-green-500 mt-0.5">✓</span>
-                      <span><strong>api.py</strong> - FastAPI server</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-green-500 mt-0.5">✓</span>
-                      <span><strong>tools/</strong> - Helper scripts (start_server.sh)</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-green-500 mt-0.5">✓</span>
-                      <span><strong>README.md</strong> - Complete documentation</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-green-500 mt-0.5">✓</span>
-                      <span><strong>tests/</strong> - Unit test scaffolding</span>
-                    </li>
-                  </ul>
-                </div>
-
-                <button
-                  onClick={handleGenerate}
-                  disabled={generating}
-                  className="px-6 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-                >
-                  {generating ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              // Pre-generation view - 2 column layout
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-full py-4">
+                {/* Left Column: What you'll get + Generate button */}
+                <div className="flex flex-col space-y-6">
+                  {/* Header */}
+                  <div className="text-center lg:text-left">
+                    <div className="w-16 h-16 mx-auto lg:mx-0 mb-3 bg-amber-100 rounded-full flex items-center justify-center">
+                      <svg className="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
-                      Generating...
-                    </span>
-                  ) : (
-                    '✨ Generate Project'
-                  )}
-                </button>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      Ready to Generate Project
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      Create a complete, production-ready FlowLang project
+                    </p>
+                  </div>
+
+                  {/* What you'll get */}
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-5 flex-1">
+                    <h4 className="text-sm font-semibold text-amber-900 mb-3 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      What you'll get
+                    </h4>
+                    <ul className="space-y-2 text-sm text-amber-900">
+                      <li className="flex items-start gap-2">
+                        <span className="text-amber-600 mt-0.5">✓</span>
+                        <span><strong>flow.yaml</strong> - Flow definition</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-amber-600 mt-0.5">✓</span>
+                        <span><strong>flow.py</strong> - Task stubs to implement</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-amber-600 mt-0.5">✓</span>
+                        <span><strong>api.py</strong> - FastAPI server</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-amber-600 mt-0.5">✓</span>
+                        <span><strong>tools/start_server.sh</strong> - Helper script</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-amber-600 mt-0.5">✓</span>
+                        <span><strong>README.md</strong> - Documentation</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-amber-600 mt-0.5">✓</span>
+                        <span><strong>tests/test_tasks.py</strong> - Unit tests</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Generate button */}
+                  <button
+                    onClick={handleGenerate}
+                    disabled={generating}
+                    className="w-full px-6 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed shadow-sm"
+                  >
+                    {generating ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Generating...
+                      </span>
+                    ) : (
+                      '✨ Generate Project'
+                    )}
+                  </button>
+                </div>
+
+                {/* Right Column: Next steps, Requirements, Status */}
+                <div className="flex flex-col space-y-4">
+                  {/* Next Steps */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
+                    <h4 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                      </svg>
+                      Next steps after generation
+                    </h4>
+                    <ol className="space-y-2 text-sm text-blue-900">
+                      <li className="flex items-start gap-2">
+                        <span className="font-semibold min-w-[1.5rem]">1.</span>
+                        <span>Download ZIP file</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="font-semibold min-w-[1.5rem]">2.</span>
+                        <span>Extract to your workspace</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="font-semibold min-w-[1.5rem]">3.</span>
+                        <span>Create virtual environment</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="font-semibold min-w-[1.5rem]">4.</span>
+                        <span>Install FlowLang (<code className="text-xs bg-blue-100 px-1 rounded">pip install flowlang</code>)</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="font-semibold min-w-[1.5rem]">5.</span>
+                        <span>Implement task stubs in flow.py</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="font-semibold min-w-[1.5rem]">6.</span>
+                        <span>Run tests (<code className="text-xs bg-blue-100 px-1 rounded">pytest tests/</code>)</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="font-semibold min-w-[1.5rem]">7.</span>
+                        <span>Start server (<code className="text-xs bg-blue-100 px-1 rounded">./tools/start_server.sh</code>)</span>
+                      </li>
+                    </ol>
+                  </div>
+
+                  {/* Technical Requirements */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      Technical requirements
+                    </h4>
+                    <ul className="space-y-2 text-sm text-gray-700">
+                      <li className="flex items-start gap-2">
+                        <span className="text-gray-400">•</span>
+                        <span>Python 3.8 or higher</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-gray-400">•</span>
+                        <span>FlowLang package</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-gray-400">•</span>
+                        <span>Virtual environment (recommended)</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-gray-400">•</span>
+                        <span>Dependencies: FastAPI, uvicorn, pyyaml</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Implementation Status Preview */}
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-5">
+                    <h4 className="text-sm font-semibold text-orange-900 mb-3 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Implementation status
+                    </h4>
+                    <div className="text-sm text-orange-900 space-y-2">
+                      <p>All tasks will be generated as stubs:</p>
+                      <div className="bg-orange-100 rounded px-3 py-2 font-mono text-xs">
+                        <div>Tasks: {nodes.filter(n => n.data?.step?.task).length}</div>
+                        <div>Implemented: 0 (0%)</div>
+                        <div className="text-orange-700 mt-1">⚠️ Ready for implementation</div>
+                      </div>
+                      <p className="text-xs">Each task will raise <code className="bg-orange-100 px-1 rounded">NotImplementedTaskError</code> until you add your code.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
               // Post-generation view - Split layout with file tree
