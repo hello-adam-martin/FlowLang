@@ -114,12 +114,13 @@ export function yamlToFlow(yamlString: string): {
           const nodeHeight = 60; // Approximate height of a task node
           const childVerticalGap = nodeHeight + 15; // Node height + 15px gap between nodes
 
-          // Calculate container size based on children
+          // Calculate container size based on children (accounting for nested containers)
           const childrenCount = step.do.length;
-          const containerWidth = 250; // Default loop container width
+          const hasNestedContainers = step.do.some(child => child.for_each || child.parallel);
+          const containerWidth = hasNestedContainers ? 350 : 250; // Wider if has nested containers
           const containerHeight = Math.max(
             180, // Minimum height
-            childY + (childrenCount * nodeHeight) + ((childrenCount - 1) * 15) + 20 // Header + all nodes + gaps + bottom padding
+            childY + (childrenCount * (hasNestedContainers ? 200 : nodeHeight)) + ((childrenCount - 1) * 15) + 20 // Header + all nodes + gaps + bottom padding
           );
 
           // Update the container node with calculated dimensions
@@ -133,7 +134,7 @@ export function yamlToFlow(yamlString: string): {
             containerNode.height = containerHeight;
           }
 
-          // Process children with vertical spacing inside container
+          // Process children with vertical spacing inside container (recursively handles nested containers)
           processSteps(step.do, nodeId, childX, childY, childVerticalGap, true);
         }
 
@@ -145,12 +146,13 @@ export function yamlToFlow(yamlString: string): {
           const nodeHeight = 60; // Approximate height of a task node
           const childVerticalGap = nodeHeight + 15; // Node height + 15px gap between nodes
 
-          // Calculate container size based on children
+          // Calculate container size based on children (accounting for nested containers)
           const childrenCount = step.parallel.length;
-          const containerWidth = 250; // Default parallel container width
+          const hasNestedContainers = step.parallel.some(child => child.for_each || child.parallel);
+          const containerWidth = hasNestedContainers ? 350 : 250; // Wider if has nested containers
           const containerHeight = Math.max(
             180, // Minimum height
-            childY + (childrenCount * nodeHeight) + ((childrenCount - 1) * 15) + 20 // Header + all nodes + gaps + bottom padding
+            childY + (childrenCount * (hasNestedContainers ? 200 : nodeHeight)) + ((childrenCount - 1) * 15) + 20 // Header + all nodes + gaps + bottom padding
           );
 
           // Update the container node with calculated dimensions
@@ -164,7 +166,7 @@ export function yamlToFlow(yamlString: string): {
             containerNode.height = containerHeight;
           }
 
-          // Process children with vertical spacing inside container
+          // Process children with vertical spacing inside container (recursively handles nested containers)
           processSteps(step.parallel, nodeId, childX, childY, childVerticalGap, true);
         }
 
@@ -475,20 +477,20 @@ export function flowToYaml(
     const step = nodeToStep(node);
     if (!step) return null;
 
-    // Handle container nodes (Loop, Parallel) - use parentId
+    // Handle container nodes (Loop, Parallel) - use parentId and recursively process children
     if (node.type === 'loopContainer' && step.for_each) {
       const children = flowNodes.filter(n => n.parentId === node.id);
       const sortedChildren = [...children].sort((a, b) => a.position.y - b.position.y);
       step.do = sortedChildren.map(child => {
-        processedNodes.add(child.id);
-        return nodeToStep(child);
+        // Use buildStep instead of nodeToStep to handle nested containers recursively
+        return buildStep(child);
       }).filter(s => s !== null) as Step[];
     } else if (node.type === 'parallelContainer') {
       const children = flowNodes.filter(n => n.parentId === node.id);
       const sortedChildren = [...children].sort((a, b) => a.position.y - b.position.y);
       step.parallel = sortedChildren.map(child => {
-        processedNodes.add(child.id);
-        return nodeToStep(child);
+        // Use buildStep instead of nodeToStep to handle nested containers recursively
+        return buildStep(child);
       }).filter(s => s !== null) as Step[];
     }
     // Handle routing nodes (Conditional, Switch) - follow edges by handle
