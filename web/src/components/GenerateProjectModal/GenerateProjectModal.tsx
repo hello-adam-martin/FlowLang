@@ -65,6 +65,7 @@ export default function GenerateProjectModal({ isOpen, onClose }: GenerateProjec
     { name: 'flow.yaml', content: project.flowYaml, language: 'yaml' },
     { name: 'flow.py', content: project.flowPy, language: 'python' },
     { name: 'api.py', content: project.apiPy, language: 'python' },
+    { name: 'tools/start_server.sh', content: project.startServerSh, language: 'shell' },
     { name: 'README.md', content: project.readme, language: 'markdown' },
     { name: 'tests/test_tasks.py', content: project.tests, language: 'python' },
   ] : [];
@@ -140,6 +141,10 @@ export default function GenerateProjectModal({ isOpen, onClose }: GenerateProjec
                     <li className="flex items-start gap-2">
                       <span className="text-green-500 mt-0.5">✓</span>
                       <span><strong>api.py</strong> - FastAPI server</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-green-500 mt-0.5">✓</span>
+                      <span><strong>tools/</strong> - Helper scripts (start_server.sh)</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-green-500 mt-0.5">✓</span>
