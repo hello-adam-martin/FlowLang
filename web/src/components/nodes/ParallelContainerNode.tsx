@@ -18,17 +18,29 @@ function ParallelContainerNode({ data, selected, id }: NodeProps) {
   // Store the original size when first rendered (only once)
   const originalSizeRef = useRef<{ width: number; height: number } | null>(null);
 
-  // Capture original size on first render
-  if (!originalSizeRef.current) {
-    const nodeElement = document.querySelector(`[data-id="${id}"]`) as HTMLElement;
-    if (nodeElement) {
-      const rect = nodeElement.getBoundingClientRect();
-      originalSizeRef.current = { width: rect.width, height: rect.height };
-    } else {
-      // Fallback to default sizes
-      originalSizeRef.current = { width: 450, height: 200 };
+  // Capture original size on first render - prefer node properties over DOM
+  useEffect(() => {
+    if (!originalSizeRef.current) {
+      const node = getNode(id);
+      if (node && (node.width || node.measured?.width)) {
+        // Use node properties if available (from YAML import)
+        originalSizeRef.current = {
+          width: node.width ?? node.measured?.width ?? 450,
+          height: node.height ?? node.measured?.height ?? 200,
+        };
+      } else {
+        // Fallback to DOM measurement
+        const nodeElement = document.querySelector(`[data-id="${id}"]`) as HTMLElement;
+        if (nodeElement) {
+          const rect = nodeElement.getBoundingClientRect();
+          originalSizeRef.current = { width: rect.width, height: rect.height };
+        } else {
+          // Final fallback to default sizes
+          originalSizeRef.current = { width: 450, height: 200 };
+        }
+      }
     }
-  }
+  }, [id, getNode]);
 
   // Find child nodes and calculate execution order based on edges
   const { childNodes, hasChildren, executionOrder } = useMemo(() => {
@@ -72,32 +84,31 @@ function ParallelContainerNode({ data, selected, id }: NodeProps) {
       incomingCount.get(child.id) === 0 && connectedNodes.has(child.id)
     );
 
-    // Perform topological sort to determine execution order (only for connected nodes)
-    const order: string[] = [];
-    const queue = [...startNodes.map(n => n.id)];
-    const visited = new Set<string>();
-
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      if (visited.has(current)) continue;
-      visited.add(current);
-      order.push(current);
-
-      const neighbors = adjacency.get(current) || [];
-      neighbors.forEach(neighbor => {
-        const count = incomingCount.get(neighbor) || 0;
-        incomingCount.set(neighbor, count - 1);
-        if (incomingCount.get(neighbor) === 0) {
-          queue.push(neighbor);
-        }
-      });
-    }
-
-    // Create execution order map (nodeId -> order number)
-    // Only assign numbers to nodes that are part of the connected flow
+    // Create execution order map - assign numbers independently per chain
     const orderMap = new Map<string, number>();
-    order.forEach((nodeId, index) => {
-      orderMap.set(nodeId, index + 1);
+
+    // Process each independent chain starting from each start node
+    startNodes.forEach(startNode => {
+      let chainOrder = 1;
+      const queue = [startNode.id];
+      const visited = new Set<string>();
+
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        if (visited.has(current)) continue;
+        visited.add(current);
+
+        // Assign order number for this chain
+        orderMap.set(current, chainOrder++);
+
+        const neighbors = adjacency.get(current) || [];
+        neighbors.forEach(neighbor => {
+          // Only follow edges within this chain (not already visited)
+          if (!visited.has(neighbor)) {
+            queue.push(neighbor);
+          }
+        });
+      }
     });
 
     return {
@@ -155,6 +166,7 @@ function ParallelContainerNode({ data, selected, id }: NodeProps) {
     const node = getNode(id);
     if (!node) return;
 
+    // Get current size - prefer DOM measurement as it's most accurate
     const nodeElement = document.querySelector(`[data-id="${id}"]`) as HTMLElement;
     let currentWidth = 450;
     let currentHeight = 200;
@@ -239,6 +251,16 @@ function ParallelContainerNode({ data, selected, id }: NodeProps) {
         onMouseLeave={() => setIsHovered(false)}
         onClick={handleClick}
       >
+      {/* Execution order badge - shows when node is inside another container */}
+      {nodeData.executionOrder && (
+        <div
+          className="absolute -top-1.5 -left-1.5 w-5 h-5 bg-gray-300 text-white rounded-full flex items-center justify-center shadow-sm z-10 text-[10px] font-bold"
+          title={`Execution order: ${nodeData.executionOrder}`}
+        >
+          {nodeData.executionOrder}
+        </div>
+      )}
+
       {/* Delete button - shows on hover */}
       <button
         onClick={handleDelete}

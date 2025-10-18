@@ -70,7 +70,7 @@ export function yamlToFlow(yamlString: string): {
 
     steps.forEach((step, stepIndex) => {
       const nodeId = getNextNodeId(step);
-      const node = stepToNode(step, stepIndex, currentX, currentY, parentId);
+      const node = stepToNode(step, stepIndex, currentX, currentY, parentId, nodeId);
 
       if (node) {
         nodes.push(node);
@@ -116,11 +116,38 @@ export function yamlToFlow(yamlString: string): {
 
           // Calculate container size based on children (accounting for nested containers)
           const childrenCount = step.do.length;
-          const hasNestedContainers = step.do.some(child => child.for_each || child.parallel);
-          const containerWidth = hasNestedContainers ? 350 : 250; // Wider if has nested containers
+
+          // Calculate depth and size more accurately
+          const calculateChildSize = (child: Step): { width: number; height: number } => {
+            if (child.for_each && child.do) {
+              // Loop container - check if it has nested containers
+              const hasNestedInLoop = child.do.some(c => c.for_each || c.parallel);
+              return {
+                width: hasNestedInLoop ? 400 : 250,
+                height: hasNestedInLoop ? 450 : 200
+              };
+            } else if (child.parallel) {
+              // Parallel container - check depth
+              const hasNestedInParallel = child.parallel.some(c => c.for_each || c.parallel);
+              return {
+                width: hasNestedInParallel ? 400 : 250,
+                height: hasNestedInParallel ? 450 : 200
+              };
+            }
+            // Regular task node
+            return { width: 200, height: 60 };
+          };
+
+          // Get the maximum child dimensions
+          const childSizes = step.do.map(calculateChildSize);
+          const maxChildWidth = Math.max(...childSizes.map(s => s.width));
+          const maxChildHeight = Math.max(...childSizes.map(s => s.height));
+          const totalHeight = childSizes.reduce((sum, s) => sum + s.height, 0);
+
+          const containerWidth = maxChildWidth + 80; // Child width + padding on both sides
           const containerHeight = Math.max(
-            180, // Minimum height
-            childY + (childrenCount * (hasNestedContainers ? 200 : nodeHeight)) + ((childrenCount - 1) * 15) + 20 // Header + all nodes + gaps + bottom padding
+            150, // Minimum height
+            childY + totalHeight + ((childrenCount - 1) * 15) + 30 // Header + all children heights + gaps + bottom padding
           );
 
           // Update the container node with calculated dimensions
@@ -132,6 +159,11 @@ export function yamlToFlow(yamlString: string): {
             };
             containerNode.width = containerWidth;
             containerNode.height = containerHeight;
+            // Set measured dimensions for ReactFlow
+            containerNode.measured = {
+              width: containerWidth,
+              height: containerHeight,
+            };
           }
 
           // Process children with vertical spacing inside container (recursively handles nested containers)
@@ -148,11 +180,38 @@ export function yamlToFlow(yamlString: string): {
 
           // Calculate container size based on children (accounting for nested containers)
           const childrenCount = step.parallel.length;
-          const hasNestedContainers = step.parallel.some(child => child.for_each || child.parallel);
-          const containerWidth = hasNestedContainers ? 350 : 250; // Wider if has nested containers
+
+          // Calculate depth and size more accurately
+          const calculateChildSize = (child: Step): { width: number; height: number } => {
+            if (child.for_each && child.do) {
+              // Loop container - check if it has nested containers
+              const hasNestedInLoop = child.do.some(c => c.for_each || c.parallel);
+              return {
+                width: hasNestedInLoop ? 400 : 250,
+                height: hasNestedInLoop ? 450 : 200
+              };
+            } else if (child.parallel) {
+              // Parallel container - check depth
+              const hasNestedInParallel = child.parallel.some(c => c.for_each || c.parallel);
+              return {
+                width: hasNestedInParallel ? 400 : 250,
+                height: hasNestedInParallel ? 450 : 200
+              };
+            }
+            // Regular task node
+            return { width: 200, height: 60 };
+          };
+
+          // Get the maximum child dimensions
+          const childSizes = step.parallel.map(calculateChildSize);
+          const maxChildWidth = Math.max(...childSizes.map(s => s.width));
+          const maxChildHeight = Math.max(...childSizes.map(s => s.height));
+          const totalHeight = childSizes.reduce((sum, s) => sum + s.height, 0);
+
+          const containerWidth = maxChildWidth + 80; // Child width + padding on both sides
           const containerHeight = Math.max(
             180, // Minimum height
-            childY + (childrenCount * (hasNestedContainers ? 200 : nodeHeight)) + ((childrenCount - 1) * 15) + 20 // Header + all nodes + gaps + bottom padding
+            childY + totalHeight + ((childrenCount - 1) * 15) + 40 // Header + all children heights + gaps + bottom padding
           );
 
           // Update the container node with calculated dimensions
@@ -164,6 +223,11 @@ export function yamlToFlow(yamlString: string): {
             };
             containerNode.width = containerWidth;
             containerNode.height = containerHeight;
+            // Set measured dimensions for ReactFlow
+            containerNode.measured = {
+              width: containerWidth,
+              height: containerHeight,
+            };
           }
 
           // Process children with vertical spacing inside container (recursively handles nested containers)
@@ -366,7 +430,8 @@ function stepToNode(
   index: number,
   x: number,
   y: number,
-  parentId?: string
+  parentId?: string,
+  nodeId?: string  // Pass in the nodeId from getNextNodeId to ensure consistency
 ): Node<FlowNodeData> | null {
   let type: FlowNodeType = 'task';
   let label = `Step ${index + 1}`;
@@ -392,8 +457,12 @@ function stepToNode(
     label = 'Exit';
   }
 
+  // IMPORTANT: Use the nodeId passed from getNextNodeId to ensure consistency
+  // between nodeId (used for edges/parentId) and node.id (actual node ID)
+  const finalNodeId = nodeId || step.id || `node_${index}`;
+
   const node: Node<FlowNodeData> = {
-    id: step.id || `node_${index}`,
+    id: finalNodeId,
     type,
     position: { x, y },
     data: {
@@ -592,28 +661,86 @@ export function flowToYaml(
 
   const sortedNodes = [...flowNodes].sort((a, b) => a.position.y - b.position.y);
 
-  // Build output definition with proper field order:
-  // flow, description, inputs, outputs, connections, triggers, on_cancel, steps (last)
+  // Build output definition with proper field order (canonical FlowLang order):
+  // flow, description, inputs, connections, triggers, steps, outputs, on_cancel
   const outputDefinition: any = {};
 
   if (flowDefinition.flow) outputDefinition.flow = flowDefinition.flow;
   if (flowDefinition.description) outputDefinition.description = flowDefinition.description;
   if (flowDefinition.inputs) outputDefinition.inputs = flowDefinition.inputs;
-  if (flowDefinition.outputs) outputDefinition.outputs = flowDefinition.outputs;
   if (flowDefinition.connections) outputDefinition.connections = flowDefinition.connections;
   if (flowDefinition.triggers) outputDefinition.triggers = flowDefinition.triggers;
-  if (flowDefinition.on_cancel) outputDefinition.on_cancel = flowDefinition.on_cancel;
 
-  // Steps always last
+  // Steps come before outputs in FlowLang
   outputDefinition.steps = steps;
+
+  if (flowDefinition.outputs) outputDefinition.outputs = flowDefinition.outputs;
+  if (flowDefinition.on_cancel) outputDefinition.on_cancel = flowDefinition.on_cancel;
 
   return buildYamlWithComments(outputDefinition, sortedNodes);
 }
 
 /**
+ * Smart YAML value serialization that minimizes unnecessary quotes
+ */
+function serializeYamlValue(value: any): string {
+  if (value === null || value === undefined) {
+    return 'null';
+  }
+
+  if (typeof value === 'boolean') {
+    return value.toString();
+  }
+
+  if (typeof value === 'number') {
+    return value.toString();
+  }
+
+  if (typeof value === 'string') {
+    // Don't quote variable references like ${inputs.var}
+    if (value.match(/^\$\{.+\}$/)) {
+      return value;
+    }
+
+    // Don't quote simple strings (alphanumeric, underscores, hyphens, dots)
+    // This handles cases like: done, success, error, step_1, category-name
+    if (value.match(/^[a-zA-Z0-9_\-\.]+$/)) {
+      return value;
+    }
+
+    // Don't quote strings that are safe in YAML without quotes
+    // Quote only if the string contains problematic YAML sequences
+    const needsQuoting =
+      value.match(/^[\s\-\[\{]/) || // Starts with space, hyphen, or bracket
+      value.match(/:\s/) ||          // Contains colon followed by space (looks like key: value)
+      value.match(/[{}[\]]/) ||      // Contains braces or brackets
+      value.match(/^(true|false|null|yes|no|on|off)$/i) || // YAML boolean/null keywords
+      value.match(/^\d+$/) ||        // Pure numbers (would be parsed as numbers)
+      value.trim() !== value;        // Has leading or trailing whitespace
+
+    if (!needsQuoting) {
+      return value;
+    }
+
+    // Otherwise use JSON.stringify for proper escaping
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return JSON.stringify(value);
+}
+
+/**
  * Helper function to render a single step with proper indentation
  */
-function renderStep(step: Step, index: number, indentLevel: number): string[] {
+function renderStep(step: Step, _index: number, indentLevel: number): string[] {
   const indent = '  '.repeat(indentLevel);
   const lines: string[] = [];
 
@@ -626,7 +753,7 @@ function renderStep(step: Step, index: number, indentLevel: number): string[] {
     if (step.inputs && Object.keys(step.inputs).length > 0) {
       lines.push(`${indent}  inputs:`);
       Object.entries(step.inputs).forEach(([key, value]) => {
-        lines.push(`${indent}    ${key}: ${JSON.stringify(value)}`);
+        lines.push(`${indent}    ${key}: ${serializeYamlValue(value)}`);
       });
     }
     if (step.outputs && step.outputs.length > 0) {
@@ -655,7 +782,7 @@ function renderStep(step: Step, index: number, indentLevel: number): string[] {
     }
     if (step.parallel && step.parallel.length > 0) {
       step.parallel.forEach((childStep, childIndex) => {
-        const childLines = renderStep(childStep, childIndex, indentLevel + 1);
+        const childLines = renderStep(childStep, childIndex, indentLevel + 2);
         lines.push(...childLines);
       });
     }
@@ -671,7 +798,7 @@ function renderStep(step: Step, index: number, indentLevel: number): string[] {
             lines.push(`${indent}      - ${condition}`);
           });
         } else {
-          lines.push(`${indent}    ${key}: ${JSON.stringify(value)}`);
+          lines.push(`${indent}    ${key}: ${serializeYamlValue(value)}`);
         }
       });
     }
@@ -703,8 +830,8 @@ function renderStep(step: Step, index: number, indentLevel: number): string[] {
       lines.push(`${indent}  cases:`);
       step.cases.forEach((caseExpr) => {
         const whenValue = Array.isArray(caseExpr.when)
-          ? caseExpr.when.map(v => JSON.stringify(v)).join(', ')
-          : JSON.stringify(caseExpr.when);
+          ? caseExpr.when.map(v => serializeYamlValue(v)).join(', ')
+          : serializeYamlValue(caseExpr.when);
         lines.push(`${indent}    - when: ${whenValue}`);
         lines.push(`${indent}      do:`);
         if (caseExpr.do && caseExpr.do.length > 0) {
@@ -726,12 +853,12 @@ function renderStep(step: Step, index: number, indentLevel: number): string[] {
     lines.push(`${indent}- exit: ${typeof step.exit === 'object' ? '' : 'true'}`);
     if (typeof step.exit === 'object') {
       if (step.exit.reason) {
-        lines.push(`${indent}    reason: ${JSON.stringify(step.exit.reason)}`);
+        lines.push(`${indent}    reason: ${serializeYamlValue(step.exit.reason)}`);
       }
       if (step.exit.outputs) {
         lines.push(`${indent}    outputs:`);
         Object.entries(step.exit.outputs).forEach(([key, value]) => {
-          lines.push(`${indent}      ${key}: ${JSON.stringify(value)}`);
+          lines.push(`${indent}      ${key}: ${serializeYamlValue(value)}`);
         });
       }
     }
@@ -756,7 +883,7 @@ function buildYamlWithComments(
 
   // Description
   if (definition.description) {
-    lines.push(`description: ${JSON.stringify(definition.description)}`);
+    lines.push(`description: ${serializeYamlValue(definition.description)}`);
   }
 
   // Inputs
@@ -772,19 +899,8 @@ function buildYamlWithComments(
         lines.push(`    required: ${input.required}`);
       }
       if (input.default !== undefined) {
-        lines.push(`    default: ${JSON.stringify(input.default)}`);
+        lines.push(`    default: ${serializeYamlValue(input.default)}`);
       }
-    });
-  }
-
-  // Outputs
-  if (definition.outputs && definition.outputs.length > 0) {
-    lines.push('');
-    lines.push('# Flow outputs');
-    lines.push('outputs:');
-    definition.outputs.forEach((output: any) => {
-      lines.push(`  - name: ${output.name}`);
-      lines.push(`    value: ${output.value}`);
     });
   }
 
@@ -797,7 +913,7 @@ function buildYamlWithComments(
       lines.push(`  ${name}:  # ${conn.type}`);
       Object.entries(conn).forEach(([key, value]) => {
         if (key !== 'type') {
-          lines.push(`    ${key}: ${JSON.stringify(value)}`);
+          lines.push(`    ${key}: ${serializeYamlValue(value)}`);
         } else {
           lines.push(`    type: ${value}`);
         }
@@ -819,10 +935,10 @@ function buildYamlWithComments(
           if (typeof value === 'object' && value !== null) {
             lines.push(`    ${key}:`);
             Object.entries(value).forEach(([subKey, subValue]) => {
-              lines.push(`      ${subKey}: ${JSON.stringify(subValue)}`);
+              lines.push(`      ${subKey}: ${serializeYamlValue(subValue)}`);
             });
           } else {
-            lines.push(`    ${key}: ${JSON.stringify(value)}`);
+            lines.push(`    ${key}: ${serializeYamlValue(value)}`);
           }
         }
       });
@@ -832,31 +948,7 @@ function buildYamlWithComments(
     });
   }
 
-  // Cleanup handlers (on_cancel)
-  if (definition.on_cancel && definition.on_cancel.length > 0) {
-    lines.push('');
-    lines.push('# Cleanup steps (execute in LIFO order when flow is cancelled)');
-    lines.push('on_cancel:');
-    definition.on_cancel.forEach((step: Step, index: number) => {
-      const stepNum = definition.on_cancel.length - index;
-      const description = step.description ? ` - ${step.description}` : '';
-      lines.push(`  - task: ${step.task}  # Step ${stepNum}${description}`);
-      if (step.id) {
-        lines.push(`    id: ${step.id}`);
-      }
-      if (step.inputs && Object.keys(step.inputs).length > 0) {
-        lines.push(`    inputs:`);
-        Object.entries(step.inputs).forEach(([key, value]) => {
-          lines.push(`      ${key}: ${JSON.stringify(value)}`);
-        });
-      }
-      if (index < definition.on_cancel.length - 1) {
-        lines.push('');
-      }
-    });
-  }
-
-  // Steps
+  // Steps (before outputs in canonical FlowLang order)
   if (definition.steps && definition.steps.length > 0) {
     lines.push('');
     lines.push('# Workflow steps');
@@ -874,6 +966,41 @@ function buildYamlWithComments(
     });
   }
 
+  // Outputs (after steps in canonical FlowLang order)
+  if (definition.outputs && definition.outputs.length > 0) {
+    lines.push('');
+    lines.push('# Flow outputs');
+    lines.push('outputs:');
+    definition.outputs.forEach((output: any) => {
+      lines.push(`  - name: ${output.name}`);
+      lines.push(`    value: ${output.value}`);
+    });
+  }
+
+  // Cleanup handlers (on_cancel) - last
+  if (definition.on_cancel && definition.on_cancel.length > 0) {
+    lines.push('');
+    lines.push('# Cleanup steps (execute in LIFO order when flow is cancelled)');
+    lines.push('on_cancel:');
+    definition.on_cancel.forEach((step: Step, index: number) => {
+      const stepNum = definition.on_cancel.length - index;
+      const description = step.description ? ` - ${step.description}` : '';
+      lines.push(`  - task: ${step.task}  # Step ${stepNum}${description}`);
+      if (step.id) {
+        lines.push(`    id: ${step.id}`);
+      }
+      if (step.inputs && Object.keys(step.inputs).length > 0) {
+        lines.push(`    inputs:`);
+        Object.entries(step.inputs).forEach(([key, value]) => {
+          lines.push(`      ${key}: ${serializeYamlValue(value)}`);
+        });
+      }
+      if (index < definition.on_cancel.length - 1) {
+        lines.push('');
+      }
+    });
+  }
+
   return lines.join('\n') + '\n';
 }
 
@@ -883,16 +1010,30 @@ function buildYamlWithComments(
 function nodeToStep(node: Node<FlowNodeData>): Step | null {
   // If node already has a step definition, use it
   if (node.data.step) {
-    return {
-      ...node.data.step,
-      id: node.id,
-    };
+    const step = { ...node.data.step };
+
+    // For tasks, always ensure ID is present (required by schema)
+    if (node.data.type === 'task') {
+      step.id = node.id;
+    } else {
+      // For containers, only include ID if it was explicitly in the original YAML
+      // Remove auto-generated IDs (node_0, node_1, etc.)
+      if (step.id && step.id.match(/^node_\d+$/)) {
+        delete step.id;
+      }
+      // Otherwise preserve the original ID if it exists
+    }
+
+    return step;
   }
 
   // Otherwise create a basic step based on type
-  const baseStep: Step = {
-    id: node.id,
-  };
+  const baseStep: any = {};
+
+  // Only include ID for tasks (required by schema)
+  if (node.data.type === 'task') {
+    baseStep.id = node.id;
+  }
 
   switch (node.data.type) {
     case 'task':
@@ -939,7 +1080,7 @@ function nodeToStep(node: Node<FlowNodeData>): Step | null {
       };
 
     default:
-      return baseStep;
+      return { ...baseStep };
   }
 }
 

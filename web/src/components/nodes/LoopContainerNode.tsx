@@ -18,17 +18,29 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
   // Store the original size when first rendered (only once)
   const originalSizeRef = useRef<{ width: number; height: number } | null>(null);
 
-  // Capture original size on first render
-  if (!originalSizeRef.current) {
-    const nodeElement = document.querySelector(`[data-id="${id}"]`) as HTMLElement;
-    if (nodeElement) {
-      const rect = nodeElement.getBoundingClientRect();
-      originalSizeRef.current = { width: rect.width, height: rect.height };
-    } else {
-      // Fallback to default sizes
-      originalSizeRef.current = { width: 250, height: 150 };
+  // Capture original size on first render - prefer node properties over DOM
+  useEffect(() => {
+    if (!originalSizeRef.current) {
+      const node = getNode(id);
+      if (node && (node.width || node.measured?.width)) {
+        // Use node properties if available (from YAML import)
+        originalSizeRef.current = {
+          width: node.width ?? node.measured?.width ?? 250,
+          height: node.height ?? node.measured?.height ?? 150,
+        };
+      } else {
+        // Fallback to DOM measurement
+        const nodeElement = document.querySelector(`[data-id="${id}"]`) as HTMLElement;
+        if (nodeElement) {
+          const rect = nodeElement.getBoundingClientRect();
+          originalSizeRef.current = { width: rect.width, height: rect.height };
+        } else {
+          // Final fallback to default sizes
+          originalSizeRef.current = { width: 250, height: 150 };
+        }
+      }
     }
-  }
+  }, [id, getNode]);
 
   // Find child nodes and calculate execution order based on edges
   const { childNodes, hasChildren, executionOrder } = useMemo(() => {
@@ -156,7 +168,7 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
     const node = getNode(id);
     if (!node) return;
 
-    // Get the actual rendered dimensions from the DOM
+    // Get current size - prefer DOM measurement as it's most accurate
     const nodeElement = document.querySelector(`[data-id="${id}"]`) as HTMLElement;
     let currentWidth = 250;
     let currentHeight = 150;
@@ -258,6 +270,16 @@ function LoopContainerNode({ data, selected, id }: NodeProps) {
         onMouseLeave={() => setIsHovered(false)}
         onClick={handleClick}
       >
+      {/* Execution order badge - shows when node is inside a parallel container */}
+      {nodeData.executionOrder && (
+        <div
+          className="absolute -top-1.5 -left-1.5 w-5 h-5 bg-gray-300 text-white rounded-full flex items-center justify-center shadow-sm z-10 text-[10px] font-bold"
+          title={`Execution order: ${nodeData.executionOrder}`}
+        >
+          {nodeData.executionOrder}
+        </div>
+      )}
+
       {/* Delete button - shows on hover */}
       <button
         onClick={handleDelete}
