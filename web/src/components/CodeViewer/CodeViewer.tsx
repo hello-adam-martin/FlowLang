@@ -22,21 +22,37 @@ export interface CodeFile {
 interface CodeViewerProps {
   files: CodeFile[];
   className?: string;
+  /** Optional: Show only a single file (no tabs) */
+  selectedFile?: string;
+  /** Optional: Show tabs (default: true) */
+  showTabs?: boolean;
 }
 
-export default function CodeViewer({ files, className = '' }: CodeViewerProps) {
+export default function CodeViewer({
+  files,
+  className = '',
+  selectedFile,
+  showTabs = true
+}: CodeViewerProps) {
   const [activeTab, setActiveTab] = useState(0);
   const [copied, setCopied] = useState(false);
 
   if (files.length === 0) {
     return (
-      <div className="code-viewer-empty">
+      <div className="code-viewer-empty flex items-center justify-center h-full">
         <p className="text-gray-500 text-sm">No files to display</p>
       </div>
     );
   }
 
-  const currentFile = files[activeTab];
+  // Determine current file based on selectedFile prop or active tab
+  let currentFile: CodeFile;
+  if (selectedFile) {
+    const found = files.find(f => f.name === selectedFile);
+    currentFile = found || files[0];
+  } else {
+    currentFile = files[activeTab];
+  }
 
   const handleCopy = async () => {
     try {
@@ -51,22 +67,24 @@ export default function CodeViewer({ files, className = '' }: CodeViewerProps) {
 
   return (
     <div className={`code-viewer flex flex-col h-full ${className}`}>
-      {/* File Tabs */}
-      <div className="flex border-b border-gray-200 bg-gray-50 overflow-x-auto">
-        {files.map((file, idx) => (
-          <button
-            key={idx}
-            onClick={() => setActiveTab(idx)}
-            className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
-              activeTab === idx
-                ? 'bg-white border-b-2 border-amber-500 text-amber-600'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-            }`}
-          >
-            {file.name}
-          </button>
-        ))}
-      </div>
+      {/* File Tabs (optional) */}
+      {showTabs && (
+        <div className="flex border-b border-gray-200 bg-gray-50 overflow-x-auto">
+          {files.map((file, idx) => (
+            <button
+              key={idx}
+              onClick={() => setActiveTab(idx)}
+              className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
+                activeTab === idx
+                  ? 'bg-white border-b-2 border-amber-500 text-amber-600'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              {file.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Editor Actions */}
       <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">

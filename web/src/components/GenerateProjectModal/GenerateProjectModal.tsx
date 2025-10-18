@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { useFlowStore } from '../../store/flowStore';
 import { generateProject, createProjectZip, type GeneratedProject } from '../../services/projectGenerator';
 import CodeViewer, { type CodeFile } from '../CodeViewer/CodeViewer';
+import FileTree, { type FileTreeFile } from '../FileTree/FileTree';
 import { saveAs } from 'file-saver';
 
 interface GenerateProjectModalProps {
@@ -24,6 +25,7 @@ export default function GenerateProjectModal({ isOpen, onClose }: GenerateProjec
   const [generating, setGenerating] = useState(false);
   const [project, setProject] = useState<GeneratedProject | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<string>('flow.yaml');
 
   if (!isOpen) return null;
 
@@ -61,6 +63,7 @@ export default function GenerateProjectModal({ isOpen, onClose }: GenerateProjec
     onClose();
   };
 
+  // Prepare files for display
   const codeFiles: CodeFile[] = project ? [
     { name: 'flow.yaml', content: project.flowYaml, language: 'yaml' },
     { name: 'flow.py', content: project.flowPy, language: 'python' },
@@ -69,6 +72,12 @@ export default function GenerateProjectModal({ isOpen, onClose }: GenerateProjec
     { name: 'README.md', content: project.readme, language: 'markdown' },
     { name: 'tests/test_tasks.py', content: project.tests, language: 'python' },
   ] : [];
+
+  // Prepare file tree structure
+  const fileTreeFiles: FileTreeFile[] = codeFiles.map(f => ({
+    name: f.name,
+    path: f.name
+  }));
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -81,7 +90,7 @@ export default function GenerateProjectModal({ isOpen, onClose }: GenerateProjec
       {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className="relative bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col"
+          className="relative bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[85vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -106,10 +115,10 @@ export default function GenerateProjectModal({ isOpen, onClose }: GenerateProjec
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-hidden px-6 py-4">
+          <div className="flex-1 overflow-auto px-6 py-4">
             {!project ? (
               // Pre-generation view
-              <div className="flex flex-col items-center justify-center h-full space-y-6">
+              <div className="flex flex-col items-center justify-center min-h-full space-y-6 py-8">
                 <div className="text-center">
                   <div className="w-24 h-24 mx-auto mb-4 bg-amber-100 rounded-full flex items-center justify-center">
                     <svg className="w-12 h-12 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,10 +185,10 @@ export default function GenerateProjectModal({ isOpen, onClose }: GenerateProjec
                 </button>
               </div>
             ) : (
-              // Post-generation view
-              <div className="flex flex-col h-full space-y-4">
+              // Post-generation view - Split layout with file tree
+              <div className="flex flex-col h-full">
                 {/* Success banner */}
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4 flex-shrink-0">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0">
                       <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -202,9 +211,25 @@ export default function GenerateProjectModal({ isOpen, onClose }: GenerateProjec
                   </div>
                 </div>
 
-                {/* Code viewer */}
-                <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden">
-                  <CodeViewer files={codeFiles} />
+                {/* Split layout: File tree + Code viewer */}
+                <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden flex">
+                  {/* Left: File tree */}
+                  <div className="w-64 flex-shrink-0">
+                    <FileTree
+                      files={fileTreeFiles}
+                      selectedPath={selectedFile}
+                      onFileSelect={setSelectedFile}
+                    />
+                  </div>
+
+                  {/* Right: Code viewer */}
+                  <div className="flex-1">
+                    <CodeViewer
+                      files={codeFiles}
+                      selectedFile={selectedFile}
+                      showTabs={false}
+                    />
+                  </div>
                 </div>
               </div>
             )}
