@@ -196,55 +196,55 @@ export default function SwitchNodeProperties({ node, onUpdate }: SwitchNodePrope
           <>
             {/* Case Branches */}
             {cases.map((switchCase: SwitchCase, index: number) => {
-          const caseHandle = `case_${switchCase.id}`;
-          const caseBranch = getBranchChain(caseHandle);
-          const caseValue = Array.isArray(switchCase.when) ? switchCase.when.join(', ') : String(switchCase.when || '');
+              const caseHandle = `case_${switchCase.id}`;
+              const caseBranch = getBranchChain(caseHandle);
+              const caseValue = Array.isArray(switchCase.when) ? switchCase.when.join(', ') : String(switchCase.when || '');
 
-          return (
-            <div key={switchCase.id} className="mb-3">
-              <div className="text-xs font-medium text-orange-700 mb-1 flex items-center gap-1">
-                <span className="w-3 h-3 bg-orange-500 rounded-full"></span>
-                Case {index + 1}: {caseValue || '(not set)'}
-              </div>
-              {caseBranch.length > 0 ? (
-                <div className="border border-orange-200 rounded-lg bg-orange-50 divide-y divide-orange-100">
-                  {caseBranch.map((branchNode, nodeIndex) => {
-                    const nodeTypeIcon = branchNode.type === 'task' ? '📋' :
-                                         branchNode.type === 'loopContainer' ? '↻' :
-                                         branchNode.type === 'parallelContainer' ? '⇉' :
-                                         branchNode.type === 'conditionalContainer' ? '?' :
-                                         branchNode.type === 'switchContainer' ? '⋮' :
-                                         branchNode.type === 'subflow' ? '🔁' : '•';
-                    return (
-                      <div key={branchNode.id} className="px-3 py-2 flex items-center gap-2">
-                        <div className="flex-shrink-0 text-xs text-orange-600">
-                          {nodeIndex + 1}.
-                        </div>
-                        <div className="flex-shrink-0 text-base">
-                          {nodeTypeIcon}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900 truncate">
-                            {branchNode.data.label || 'Untitled'}
+              return (
+                <div key={switchCase.id} className="mb-3">
+                  <div className="text-xs font-medium text-orange-700 mb-1 flex items-center gap-1">
+                    <span className="w-3 h-3 bg-orange-500 rounded-full"></span>
+                    Case {index + 1}: {caseValue || '(not set)'}
+                  </div>
+                  {caseBranch.length > 0 ? (
+                    <div className="border border-orange-200 rounded-lg bg-orange-50 divide-y divide-orange-100">
+                      {caseBranch.map((branchNode, nodeIndex) => {
+                        const nodeTypeIcon = branchNode.type === 'task' ? '📋' :
+                                             branchNode.type === 'loopContainer' ? '↻' :
+                                             branchNode.type === 'parallelContainer' ? '⇉' :
+                                             branchNode.type === 'conditionalContainer' ? '?' :
+                                             branchNode.type === 'switchContainer' ? '⋮' :
+                                             branchNode.type === 'subflow' ? '🔁' : '•';
+                        return (
+                          <div key={branchNode.id} className="px-3 py-2 flex items-center gap-2">
+                            <div className="flex-shrink-0 text-xs text-orange-600">
+                              {nodeIndex + 1}.
+                            </div>
+                            <div className="flex-shrink-0 text-base">
+                              {nodeTypeIcon}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-gray-900 truncate">
+                                {branchNode.data.label || 'Untitled'}
+                              </div>
+                              <div className="text-xs text-gray-500 font-mono truncate">
+                                {branchNode.id}
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-xs text-gray-500 font-mono truncate">
-                            {branchNode.id}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="border border-dashed border-orange-300 rounded-lg px-3 py-2 text-center">
+                      <p className="text-xs text-orange-700">
+                        No nodes connected to this case
+                      </p>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="border border-dashed border-orange-300 rounded-lg px-3 py-2 text-center">
-                  <p className="text-xs text-orange-700">
-                    No nodes connected to this case
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })}
 
         {/* Default Branch */}
         <div>
