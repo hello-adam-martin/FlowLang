@@ -244,10 +244,10 @@ if __name__ == "__main__":
 /**
  * Generate README.md
  */
-function generateReadme(flowName: string, tasks: TaskInfo[], flowYaml: string): string {
+function generateReadme(flowName: string, description: string | undefined, tasks: TaskInfo[], flowYaml: string): string {
   return `# ${flowName}
 
-Auto-generated FlowLang project from visual flow designer.
+${description || 'Auto-generated FlowLang project from visual flow designer.'}
 
 ## Overview
 
@@ -569,12 +569,12 @@ export async function generateProject(
   const tasks = extractTasks(nodes);
 
   // Get flow name
-  const flowName = flowDefinition.name || 'UnnamedFlow';
+  const flowName = flowDefinition.flow || 'UnnamedFlow';
 
   // Generate files
   const flowPy = generateFlowPy(flowName, tasks);
   const apiPy = generateApiPy(flowName);
-  const readme = generateReadme(flowName, tasks, flowYaml);
+  const readme = generateReadme(flowName, flowDefinition.description, tasks, flowYaml);
   const tests = generateTests(flowName, tasks);
   const startServerSh = generateStartServerSh(flowName);
 
