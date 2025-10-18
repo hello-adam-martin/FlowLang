@@ -15,13 +15,18 @@ interface LoopNodePropertiesProps {
 export default function LoopNodeProperties({ node, onUpdate }: LoopNodePropertiesProps) {
   const step = node.data.step || {};
   const execution = useFlowStore((state) => state.execution);
+  const nodes = useFlowStore((state) => state.nodes);
   const nodeExecutionState = execution.nodeStates[node.id];
+
+  // Find child nodes
+  const childNodes = nodes.filter(n => n.parentId === node.id).sort((a, b) => a.position.y - b.position.y);
 
   const [label, setLabel] = useState(node.data.label || '');
   const [badge, setBadge] = useState(node.data.badge || '');
   const [forEach, setForEach] = useState(step.for_each || '');
   const [asVariable, setAsVariable] = useState(step.as || '');
   const [showYAMLModal, setShowYAMLModal] = useState(false);
+  const [childrenExpanded, setChildrenExpanded] = useState(true);
 
   // Sync state when node changes
   useEffect(() => {
@@ -115,6 +120,76 @@ export default function LoopNodeProperties({ node, onUpdate }: LoopNodePropertie
         <p className="mt-1 text-xs text-gray-500">
           Variable name for the current item (accessible as $&#123;inputs.item&#125; inside loop)
         </p>
+      </div>
+
+      {/* Children Section */}
+      <div>
+        <div
+          className="flex items-center justify-between mb-2 cursor-pointer"
+          onClick={() => setChildrenExpanded(!childrenExpanded)}
+        >
+          <label className="text-sm font-medium text-gray-700">
+            Children ({childNodes.length})
+          </label>
+          <button
+            type="button"
+            className="p-1 hover:bg-gray-100 rounded transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setChildrenExpanded(!childrenExpanded);
+            }}
+          >
+            <svg
+              className={`w-4 h-4 text-gray-600 transition-transform ${childrenExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
+        {childrenExpanded && childNodes.length > 0 && (
+          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+            {childNodes.map((child, index) => {
+              const nodeTypeIcon = child.type === 'task' ? '📋' :
+                                   child.type === 'loopContainer' ? '↻' :
+                                   child.type === 'parallelContainer' ? '⇉' :
+                                   child.type === 'conditionalContainer' ? '?' :
+                                   child.type === 'switchContainer' ? '⋮' :
+                                   child.type === 'subflow' ? '🔁' : '•';
+
+              return (
+                <div
+                  key={child.id}
+                  className="px-3 py-2 hover:bg-gray-50 transition-colors flex items-center gap-2"
+                >
+                  <div className="flex-shrink-0 text-sm">
+                    {index + 1}.
+                  </div>
+                  <div className="flex-shrink-0 text-base">
+                    {nodeTypeIcon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-900 truncate">
+                      {child.data.label || 'Untitled'}
+                    </div>
+                    <div className="text-xs text-gray-500 font-mono truncate">
+                      {child.id}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {childrenExpanded && childNodes.length === 0 && (
+          <div className="border border-dashed border-gray-300 rounded-lg px-4 py-6 text-center">
+            <p className="text-sm text-gray-500">
+              No children. Drag nodes into this container.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Examples */}

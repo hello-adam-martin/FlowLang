@@ -13,11 +13,71 @@ interface ParallelNodePropertiesProps {
 
 export default function ParallelNodeProperties({ node, onUpdate }: ParallelNodePropertiesProps) {
   const execution = useFlowStore((state) => state.execution);
+  const nodes = useFlowStore((state) => state.nodes);
+  const edges = useFlowStore((state) => state.edges);
   const nodeExecutionState = execution.nodeStates[node.id];
+
+  // Find child nodes and calculate execution order
+  const childNodes = nodes.filter(n => n.parentId === node.id).sort((a, b) => a.position.y - b.position.y);
+
+  // Calculate execution order based on edges
+  const executionOrder = new Map<string, number>();
+  const childEdges = edges.filter(e => {
+    const sourceNode = nodes.find(n => n.id === e.source);
+    const targetNode = nodes.find(n => n.id === e.target);
+    return sourceNode?.parentId === node.id && targetNode?.parentId === node.id;
+  });
+
+  if (childEdges.length > 0) {
+    const incomingCount = new Map<string, number>();
+    const adjacency = new Map<string, string[]>();
+    const connectedNodes = new Set<string>();
+
+    childNodes.forEach(child => {
+      incomingCount.set(child.id, 0);
+      adjacency.set(child.id, []);
+    });
+
+    childEdges.forEach(edge => {
+      adjacency.get(edge.source)?.push(edge.target);
+      incomingCount.set(edge.target, (incomingCount.get(edge.target) || 0) + 1);
+      connectedNodes.add(edge.source);
+      connectedNodes.add(edge.target);
+    });
+
+    const startNodes = childNodes.filter(child =>
+      incomingCount.get(child.id) === 0 && connectedNodes.has(child.id)
+    );
+
+    const order: string[] = [];
+    const queue = [...startNodes.map(n => n.id)];
+    const visited = new Set<string>();
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      order.push(current);
+
+      const neighbors = adjacency.get(current) || [];
+      neighbors.forEach(neighbor => {
+        const count = incomingCount.get(neighbor) || 0;
+        incomingCount.set(neighbor, count - 1);
+        if (incomingCount.get(neighbor) === 0) {
+          queue.push(neighbor);
+        }
+      });
+    }
+
+    order.forEach((nodeId, index) => {
+      executionOrder.set(nodeId, index + 1);
+    });
+  }
 
   const [label, setLabel] = useState(node.data.label || '');
   const [badge, setBadge] = useState(node.data.badge || '');
   const [showYAMLModal, setShowYAMLModal] = useState(false);
+  const [childrenExpanded, setChildrenExpanded] = useState(true);
 
   // Sync state when node changes
   useEffect(() => {
@@ -67,6 +127,95 @@ export default function ParallelNodeProperties({ node, onUpdate }: ParallelNodeP
         <p className="mt-1 text-xs text-gray-500">
           Optional badge to display next to the label (e.g., item count, status)
         </p>
+      </div>
+
+      {/* Children Section */}
+      <div>
+        <div
+          className="flex items-center justify-between mb-2 cursor-pointer"
+          onClick={() => setChildrenExpanded(!childrenExpanded)}
+        >
+          <label className="text-sm font-medium text-gray-700">
+            Children ({childNodes.length})
+          </label>
+          <button
+            type="button"
+            className="p-1 hover:bg-gray-100 rounded transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setChildrenExpanded(!childrenExpanded);
+            }}
+          >
+            <svg
+              className={`w-4 h-4 text-gray-600 transition-transform ${childrenExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
+        {childrenExpanded && childNodes.length > 0 && (
+          <>
+            <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+              {childNodes.map((child) => {
+                const nodeTypeIcon = child.type === 'task' ? '📋' :
+                                     child.type === 'loopContainer' ? '↻' :
+                                     child.type === 'parallelContainer' ? '⇉' :
+                                     child.type === 'conditionalContainer' ? '?' :
+                                     child.type === 'switchContainer' ? '⋮' :
+                                     child.type === 'subflow' ? '🔁' : '•';
+
+                const order = executionOrder.get(child.id);
+
+                return (
+                  <div
+                    key={child.id}
+                    className="px-3 py-2 hover:bg-gray-50 transition-colors flex items-center gap-2"
+                  >
+                    {order && (
+                      <div className="flex-shrink-0 w-5 h-5 bg-gray-300 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
+                        {order}
+                      </div>
+                    )}
+                    {!order && (
+                      <div className="flex-shrink-0 w-5 h-5"></div>
+                    )}
+                    <div className="flex-shrink-0 text-base">
+                      {nodeTypeIcon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">
+                        {child.data.label || 'Untitled'}
+                      </div>
+                      <div className="text-xs text-gray-500 font-mono truncate">
+                        {child.id}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-600">
+              <div className="flex items-center gap-1 mb-1">
+                <div className="w-4 h-4 bg-gray-300 text-white rounded-full flex items-center justify-center text-[8px] font-bold">N</div>
+                <span>= Execution order (waits for step N to complete)</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-4 h-4"></div>
+                <span>No badge = Runs immediately (no dependencies)</span>
+              </div>
+            </div>
+          </>
+        )}
+        {childrenExpanded && childNodes.length === 0 && (
+          <div className="border border-dashed border-gray-300 rounded-lg px-4 py-6 text-center">
+            <p className="text-sm text-gray-500">
+              No children. Drag nodes into this container.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Node ID (read-only) */}
