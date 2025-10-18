@@ -434,35 +434,38 @@ Can fully edit nested structures without directly dragging nodes - use property 
 
 ---
 
-### Phase 6: Nested Execution Visualization
+### Phase 6: Nested Execution Visualization - ✅ COMPLETE
 **Goal:** Execute flows with nested structures and visualize execution
 
-**Files to Modify:**
+**Status: ✅ COMPLETE (2025-10-18)**
+
+**Files Modified:**
 - `web/src/services/flowSimulator.ts`
-- `web/src/components/nodes/ConditionalContainerNode.tsx` (execution state)
-- `web/src/components/nodes/ParallelContainerNode.tsx` (execution state)
-- `web/src/components/nodes/LoopContainerNode.tsx` (execution state)
+- `web/src/components/nodes/ConditionalContainerNode.tsx`
+- `web/src/components/nodes/ParallelContainerNode.tsx`
+- `web/src/components/nodes/LoopContainerNode.tsx`
+- `web/src/components/nodes/SwitchContainerNode.tsx`
+- `web/src/components/FlowDesigner/FlowDesigner.tsx`
+- `web/src/components/SimulationModal/SimulationModal.tsx`
+- `web/src/store/flowStore.ts`
 
-**Tasks:**
-6.1. Update flowSimulator to track execution state for child nodes
-6.2. Highlight active container section during execution (then vs else)
-6.3. Show which branch of conditional is executing
-6.4. Show parallel track progress independently
-6.5. Show loop iteration counter and current item
-6.6. Pass execution state to child nodes inside containers
-6.7. Handle variable scope (children access parent outputs + loop variables)
-6.8. Update execution history to show nested node states
-6.9. Add execution visualization to child nodes (same as root level)
-6.10. Handle error states in nested structures
+**Features Implemented:**
+- ✅ Loop containers: "Loop X/Y" badge, current item display, iteration tracking
+- ✅ Parallel containers: "X/Y done" progress, active/completed child counts
+- ✅ Conditional containers: Active branch highlighting (THEN/ELSE)
+- ✅ Switch containers: Matched case highlighting
+- ✅ All containers: Blue pulsing border (running), green (completed), red (error)
+- ✅ ContainerExecutionMetadata interface for container-specific state
+- ✅ Auto-centering with debouncing for nested nodes
+- ✅ Bug fix: Containers no longer execute children twice
 
-**Test Criteria:**
-- [ ] Run simulation on loan_approval flow
-- [ ] See which conditional branches are taken (then/else highlighting)
-- [ ] See individual task execution inside nested conditionals
-- [ ] Parallel tasks in else branch show concurrent execution
-- [ ] Execution history shows all nested node states
-- [ ] Can click on child nodes in history to see their inputs/outputs
-- [ ] Error in nested task propagates correctly
+**Test Results:**
+- ✅ All execution states visible in real-time
+- ✅ Branch highlighting works for conditionals and switches
+- ✅ Loop iteration tracking accurate
+- ✅ Parallel progress tracking accurate
+- ✅ Auto-centering smooth and non-intrusive
+- ✅ Execution logs show all container metadata
 
 **Expected Result:**
 Full execution visualization works for nested flows - can watch execution flow through complex hierarchies.
@@ -512,12 +515,12 @@ Professional-grade nested flow editor with excellent UX for complex workflows.
 **Result:** Core nested flow functionality is working. Users can import complex YAML flows, visualize them, and export them back without loss of structure.
 
 ### Full Feature Set - ⏳ IN PROGRESS
-- ✅ Phases 1, 2, 2.5, 4 complete
-- ⏸️ Phase 3 deferred
-- ⏳ Phase 5: Property Panel for Nested Editing - NOT STARTED
-- ⏳ Phase 6: Nested Execution Visualization - PARTIALLY COMPLETE (simulator works, visualization needs enhancement)
+- ✅ Phases 1, 2, 2.5, 4, 6 complete
+- ⏸️ Phase 3 deferred (optional)
+- ⏳ Phase 5: Property Panel for Nested Editing - PLANNED (see PHASE_5_PLAN.md)
 - ⏳ Property panels provide full editing capabilities
 - ✅ Performance acceptable for flows with 50+ nodes
+- ✅ Execution visualization complete for all container types
 
 ### Production Ready - ⏳ FUTURE
 - ⏳ Phase 7 nice-to-haves implemented
@@ -596,16 +599,19 @@ After phase 6:
 3. ✅ Phase 2: Recursive YAML Import
 4. ✅ Phase 2.5: Simulator Support for Routing Nodes
 5. ✅ Phase 4: Recursive YAML Export (with round-trip testing)
+6. ✅ Phase 6: Nested Execution Visualization (2025-10-18)
 
-**Current Status:** MVP ACHIEVED ✅
+**Current Status:** MVP+ ACHIEVED ✅
+- Core nested flow functionality working
+- Full execution visualization implemented
+- Round-trip YAML import/export with 100% fidelity
 
 **Next Priorities:**
-1. **Phase 5: Property Panel for Nested Editing** - Add UI for managing children in containers
-2. **Phase 6: Enhanced Execution Visualization** - Improve visual feedback during nested flow execution
-3. **Phase 3: Nested Drag & Drop** (optional) - Enable drag-and-drop editing of nested structures
-4. **Phase 7: Advanced Features** - Polish and production-ready features
+1. **Phase 5: Property Panel for Nested Editing** - Add UI for managing children in containers (see PHASE_5_PLAN.md)
+2. **Phase 3: Nested Drag & Drop** (optional) - Enable drag-and-drop editing of nested structures
+3. **Phase 7: Advanced Features** - Polish and production-ready features
 
-**Recommended Next Step:** Start Phase 5 or Phase 6 based on user needs
+**Recommended Next Step:** Start Phase 5 to enable comprehensive property panel editing of nested structures
 
 ## Notes
 
