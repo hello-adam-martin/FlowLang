@@ -4,6 +4,7 @@ import { useRef, useState, useEffect } from 'react';
 import FlowSettingsModal from '../FlowSettings/FlowSettingsModal';
 import YAMLPreviewModal from '../YAMLPreviewModal/YAMLPreviewModal';
 import ExecutionResultsPanel from '../ExecutionResultsPanel/ExecutionResultsPanel';
+import GenerateProjectModal from '../GenerateProjectModal/GenerateProjectModal';
 
 interface FlowToolbarProps {
   onShowKeyboardHelp?: () => void;
@@ -20,6 +21,7 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
   const [showYAMLModal, setShowYAMLModal] = useState(false);
   const [showResultsPanel, setShowResultsPanel] = useState(false);
   const [showYAMLMenu, setShowYAMLMenu] = useState(false);
+  const [showGenerateProject, setShowGenerateProject] = useState(false);
 
   // Automatically show results panel when execution completes
   useEffect(() => {
@@ -260,6 +262,19 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
           {/* Designer-only buttons */}
           {viewMode === 'designer' && (
             <>
+              {/* Generate Project Button */}
+              <button
+                onClick={() => setShowGenerateProject(true)}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-md flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Generate FlowLang Project"
+                disabled={nodes.length === 0}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span className="hidden sm:inline">Generate Project</span>
+              </button>
+
               {/* Flow Settings Button */}
               <button
                 onClick={() => setShowSettings(true)}
@@ -449,6 +464,12 @@ export default function FlowToolbar({ onShowKeyboardHelp, onToggleFlowManager, s
       {/* Designer-only modals */}
       {viewMode === 'designer' && (
         <>
+          {/* Generate Project Modal */}
+          <GenerateProjectModal
+            isOpen={showGenerateProject}
+            onClose={() => setShowGenerateProject(false)}
+          />
+
           {/* Flow Settings Modal */}
           <FlowSettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
